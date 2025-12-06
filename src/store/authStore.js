@@ -26,6 +26,12 @@ export const useAuthStore = create(
             apiBaseUrl = `https://${apiBaseUrl}`
           }
           
+          // Force HTTPS for production URLs (mixed content security)
+          if (apiBaseUrl.startsWith('http://') && !apiBaseUrl.includes('localhost')) {
+            // Convert http:// to https:// for non-localhost URLs
+            apiBaseUrl = apiBaseUrl.replace('http://', 'https://')
+          }
+          
           // Ensure the URL ends with /api if it's an absolute URL
           if (apiBaseUrl.startsWith('http://') || apiBaseUrl.startsWith('https://')) {
             if (!apiBaseUrl.endsWith('/api')) {

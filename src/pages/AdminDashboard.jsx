@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { BarChart3, Users, FileText, MessageSquare, Settings, Upload, MessageCircle, Bot, User as UserIcon, Building2, GraduationCap, Calendar, Plus, Edit, Trash2, X } from 'lucide-react'
+import { BarChart3, Users, FileText, MessageSquare, Settings, Upload, MessageCircle, Bot, User as UserIcon, Building2, GraduationCap, Calendar, Plus, Edit, Trash2, X, Play, Loader2 } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import ReactMarkdown from 'react-markdown'
@@ -41,6 +41,18 @@ export default function AdminDashboard() {
     result_notes: '',
     application_fee_paid: false
   })
+  
+  // Automation state
+  const [showAutomationModal, setShowAutomationModal] = useState(false)
+  const [automationForm, setAutomationForm] = useState({
+    student_id: '',
+    apply_url: '',
+    username: '',
+    password: '',
+    portal_type: ''
+  })
+  const [automationRunning, setAutomationRunning] = useState(false)
+  const [automationResult, setAutomationResult] = useState(null)
   
   // Form states
   const [showUniversityForm, setShowUniversityForm] = useState(false)
@@ -246,6 +258,55 @@ export default function AdminDashboard() {
       console.error('Error updating application:', error)
       alert('Failed to update application')
     }
+  }
+  
+  // Automation functions
+  const handleRunAutomation = async () => {
+    if (!automationForm.student_id || !automationForm.apply_url) {
+      alert('Please provide Student ID and Apply URL')
+      return
+    }
+    
+    setAutomationRunning(true)
+    setAutomationResult(null)
+    
+    try {
+      const response = await api.post('/admin/automation/run', {
+        student_id: parseInt(automationForm.student_id),
+        apply_url: automationForm.apply_url,
+        username: automationForm.username || null,
+        password: automationForm.password || null,
+        portal_type: automationForm.portal_type || null
+      })
+      
+      setAutomationResult(response.data)
+      if (response.data.status === 'ok') {
+        alert('Automation completed successfully! Check the logs and screenshot.')
+      } else {
+        alert(`Automation failed: ${response.data.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Automation error:', error)
+      setAutomationResult({
+        status: 'error',
+        error: error.response?.data?.detail || error.message
+      })
+      alert(`Automation failed: ${error.response?.data?.detail || error.message}`)
+    } finally {
+      setAutomationRunning(false)
+    }
+  }
+  
+  const handleOpenAutomationForApplication = (application) => {
+    setAutomationForm({
+      student_id: application.student_id?.toString() || '',
+      apply_url: '',
+      username: '',
+      password: '',
+      portal_type: ''
+    })
+    setShowAutomationModal(true)
+    setAutomationResult(null)
   }
   
   const handleRAGUpload = async () => {
@@ -1044,12 +1105,22 @@ export default function AdminDashboard() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm">
-                          <button
-                            onClick={() => handleViewApplication(app.id)}
-                            className="text-blue-600 hover:text-blue-800 font-medium"
-                          >
-                            View/Edit
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleViewApplication(app.id)}
+                              className="text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                              View/Edit
+                            </button>
+                            <button
+                              onClick={() => handleOpenAutomationForApplication(app)}
+                              className="text-green-600 hover:text-green-800 font-medium flex items-center gap-1"
+                              title="Run Application Automation"
+                            >
+                              <Play className="w-4 h-4" />
+                              Auto-Fill
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1858,6 +1929,88 @@ export default function AdminDashboard() {
             </div>
           )}
           
+          {activeTab === 'automation' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-gray-900">Application Automation</h2>
+                <button
+                  onClick={() => {
+                    setAutomationForm({
+                      student_id: '',
+                      apply_url: '',
+                      username: '',
+                      password: '',
+                      portal_type: ''
+                    })
+                    setShowAutomationModal(true)
+                    setAutomationResult(null)
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                >
+                  <Play className="w-4 h-4" />
+                  New Automation
+                </button>
+              </div>
+              
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <p className="text-gray-600 mb-4">
+                  Automatically fill university application forms with student data. The automation will:
+                </p>
+                <ul className="list-disc list-inside space-y-2 text-gray-600 mb-4">
+                  <li>Load student data from database</li>
+                  <li>Download and prepare student documents</li>
+                  <li>Open browser and navigate to application URL</li>
+                  <li>Fill form fields automatically</li>
+                  <li>Upload required documents</li>
+                  <li>Take screenshot for review</li>
+                  <li><strong>Require manual submission</strong> (for safety)</li>
+                </ul>
+                
+                {automationResult && (
+                  <div className={`mt-4 p-4 rounded-lg ${
+                    automationResult.status === 'ok' ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+                  }`}>
+                    <h3 className="font-semibold mb-2">
+                      {automationResult.status === 'ok' ? '✓ Automation Completed' : '✗ Automation Failed'}
+                    </h3>
+                    {automationResult.log && (
+                      <div className="bg-gray-900 text-green-400 p-3 rounded text-xs font-mono overflow-auto max-h-60 mb-2">
+                        <pre>{automationResult.log}</pre>
+                      </div>
+                    )}
+                    {automationResult.screenshot_url && (
+                      <div className="mt-2">
+                        <a
+                          href={automationResult.screenshot_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline"
+                        >
+                          View Screenshot →
+                        </a>
+                      </div>
+                    )}
+                    {automationResult.filled_fields && (
+                      <div className="mt-2 text-sm">
+                        <strong>Filled Fields:</strong> {Object.keys(automationResult.filled_fields).length}
+                      </div>
+                    )}
+                    {automationResult.uploaded_files && (
+                      <div className="mt-2 text-sm">
+                        <strong>Uploaded Files:</strong> {Object.keys(automationResult.uploaded_files).filter(k => automationResult.uploaded_files[k] === 'ok').length}
+                      </div>
+                    )}
+                    {automationResult.error && (
+                      <div className="mt-2 text-red-600 text-sm">
+                        <strong>Error:</strong> {automationResult.error}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
           {activeTab === 'settings' && (
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-gray-900">Model Tuning Settings</h2>
@@ -1929,6 +2082,127 @@ export default function AdminDashboard() {
           )}
         </main>
       </div>
+      
+      {/* Automation Modal */}
+      {showAutomationModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-900">Run Application Automation</h3>
+              <button
+                onClick={() => {
+                  setShowAutomationModal(false)
+                  setAutomationResult(null)
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Student ID *
+                </label>
+                <input
+                  type="number"
+                  value={automationForm.student_id}
+                  onChange={(e) => setAutomationForm({ ...automationForm, student_id: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  placeholder="Enter student ID"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Application URL *
+                </label>
+                <input
+                  type="url"
+                  value={automationForm.apply_url}
+                  onChange={(e) => setAutomationForm({ ...automationForm, apply_url: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  placeholder="https://university.edu/apply"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Username (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={automationForm.username}
+                  onChange={(e) => setAutomationForm({ ...automationForm, username: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  placeholder="Portal username/email"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Password (Optional)
+                </label>
+                <input
+                  type="password"
+                  value={automationForm.password}
+                  onChange={(e) => setAutomationForm({ ...automationForm, password: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  placeholder="Portal password"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Portal Type (Optional)
+                </label>
+                <select
+                  value={automationForm.portal_type}
+                  onChange={(e) => setAutomationForm({ ...automationForm, portal_type: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                >
+                  <option value="">Auto-detect</option>
+                  <option value="hit">HIT (Harbin Institute of Technology)</option>
+                  <option value="beihang">Beihang University</option>
+                  <option value="bnuz">BNUZ (Beijing Normal University Zhuhai)</option>
+                </select>
+              </div>
+              
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={handleRunAutomation}
+                  disabled={automationRunning || !automationForm.student_id || !automationForm.apply_url}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {automationRunning ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Running...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4" />
+                      Run Automation
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAutomationModal(false)
+                    setAutomationResult(null)
+                  }}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

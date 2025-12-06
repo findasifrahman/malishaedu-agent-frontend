@@ -4,14 +4,16 @@ import { Send, Upload, FileText, User, Bot, LogIn, LogOut, X, CheckCircle, Clock
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import ReactMarkdown from 'react-markdown'
-import LeadCaptureModal from '../components/LeadCaptureModal'
+// Lead collection is now automatic - no modal needed
+// import LeadCaptureModal from '../components/LeadCaptureModal'
 import DocumentUploadModal from '../components/DocumentUploadModal' // new file
 
 export default function ChatPage() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [showLeadModal, setShowLeadModal] = useState(false)
+  // Lead collection is now automatic - no modal needed
+  // const [showLeadModal, setShowLeadModal] = useState(false)
   const [showDocModal, setShowDocModal] = useState(false)
   const [showApplicationsSidebar, setShowApplicationsSidebar] = useState(false)
   const [applications, setApplications] = useState([])
@@ -51,10 +53,9 @@ export default function ChatPage() {
     const leadSubmitted = localStorage.getItem('lead_submitted') === 'true'
     const leadDismissed = localStorage.getItem('lead_dismissed') === 'true'
     
-    if (userMessages.length >= 3 && !isAuthenticated && !showLeadModal && !leadSubmitted && !leadDismissed) {
-      setShowLeadModal(true)
-    }
-  }, [messages, isAuthenticated, showLeadModal])
+    // Lead collection is now automatic - no modal trigger needed
+    // Leads are collected automatically when user provides nationality, contact info, and study interest
+  }, [messages, isAuthenticated])
 
   // Load applications for logged-in students
   useEffect(() => {
@@ -136,6 +137,12 @@ export default function ChatPage() {
       // Ensure the URL has a protocol if it's not a relative path
       if (apiBaseUrl !== '/api' && !apiBaseUrl.startsWith('http://') && !apiBaseUrl.startsWith('https://')) {
         apiBaseUrl = `https://${apiBaseUrl}`
+      }
+      
+      // Force HTTPS for production URLs (mixed content security)
+      if (apiBaseUrl.startsWith('http://') && !apiBaseUrl.includes('localhost')) {
+        // Convert http:// to https:// for non-localhost URLs
+        apiBaseUrl = apiBaseUrl.replace('http://', 'https://')
       }
       
       // Ensure the URL ends with /api if it's an absolute URL
@@ -241,47 +248,12 @@ export default function ChatPage() {
                 })
                 
                 // Check if we should show lead form
-                console.log('DEBUG: Final chunk received:', { 
-                  show_lead_form: data.show_lead_form, 
-                  show_lead_form_type: typeof data.show_lead_form,
-                  isAuthenticated, 
-                  done: data.done,
-                  allDataKeys: Object.keys(data)
-                })
-                
-                // Use strict check for show_lead_form (must be exactly true)
-                if (data.show_lead_form === true && !isAuthenticated) {
-                  const leadSubmitted = localStorage.getItem('lead_submitted') === 'true'
-                  const leadDismissed = localStorage.getItem('lead_dismissed') === 'true'
-                  console.log('DEBUG: Lead form check:', { 
-                    leadSubmitted, 
-                    leadDismissed, 
-                    willShow: !leadSubmitted 
-                  })
-                  
-                  // If backend explicitly requests lead form (show_lead_form: true), 
-                  // show it regardless of previous dismissal (only check if already submitted)
-                  // The dismissal flag should only prevent automatic "after 3 messages" trigger,
-                  // not explicit backend requests
-                  if (!leadSubmitted) {
-                    console.log('DEBUG: Backend requested lead form - showing despite previous dismissal')
-                    // Clear dismissal flag since backend is explicitly requesting the form
-                    localStorage.removeItem('lead_dismissed')
-                    // Use setTimeout to ensure state update happens after render
-                    setTimeout(() => {
-                      setShowLeadModal(true)
-                      console.log('DEBUG: showLeadModal state should now be true')
-                    }, 0)
-                  } else {
-                    console.log('DEBUG: Lead form blocked because lead already submitted')
-                  }
-                } else {
-                  console.log('DEBUG: Lead form not shown because:', { 
-                    show_lead_form: data.show_lead_form, 
-                    show_lead_form_strict: data.show_lead_form === true,
-                    isAuthenticated 
-                  })
-                }
+                // Lead collection is now automatic - no popup needed
+                // The backend automatically collects leads when user provides:
+                // - Nationality
+                // - Contact info (phone/email/whatsapp/wechat)
+                // - Study interest (degree_level/major)
+                //  no longer show a lead form pop
                 
                 break
               }
@@ -578,13 +550,7 @@ export default function ChatPage() {
       </div>
       
       {/* Modals */}
-      {showLeadModal && (
-        <LeadCaptureModal
-          onClose={() => setShowLeadModal(false)}
-          deviceFingerprint={deviceFingerprint}
-          chatSessionId={chatSessionId}
-        />
-      )}
+      {/* Lead collection is now automatic - no modal needed */}
       
       {showDocModal && (
         <DocumentUploadModal

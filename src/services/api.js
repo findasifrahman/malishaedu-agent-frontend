@@ -9,6 +9,12 @@ if (API_BASE_URL !== '/api' && !API_BASE_URL.startsWith('http://') && !API_BASE_
   API_BASE_URL = `https://${API_BASE_URL}`
 }
 
+// Force HTTPS for production URLs (mixed content security)
+if (API_BASE_URL.startsWith('http://') && !API_BASE_URL.includes('localhost')) {
+  // Convert http:// to https:// for non-localhost URLs
+  API_BASE_URL = API_BASE_URL.replace('http://', 'https://')
+}
+
 // Ensure the URL ends with /api if it's an absolute URL
 if (API_BASE_URL.startsWith('http://') || API_BASE_URL.startsWith('https://')) {
   if (!API_BASE_URL.endsWith('/api')) {
