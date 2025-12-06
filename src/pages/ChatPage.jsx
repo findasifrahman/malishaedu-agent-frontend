@@ -131,7 +131,20 @@ export default function ChatPage() {
       }
       
       // Use streaming endpoint
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
+      let apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
+      
+      // Ensure the URL has a protocol if it's not a relative path
+      if (apiBaseUrl !== '/api' && !apiBaseUrl.startsWith('http://') && !apiBaseUrl.startsWith('https://')) {
+        apiBaseUrl = `https://${apiBaseUrl}`
+      }
+      
+      // Ensure the URL ends with /api if it's an absolute URL
+      if (apiBaseUrl.startsWith('http://') || apiBaseUrl.startsWith('https://')) {
+        if (!apiBaseUrl.endsWith('/api')) {
+          apiBaseUrl = apiBaseUrl.replace(/\/$/, '') + '/api'
+        }
+      }
+      
       const response = await fetch(`${apiBaseUrl}/chat/stream`, {
         method: 'POST',
         headers: {

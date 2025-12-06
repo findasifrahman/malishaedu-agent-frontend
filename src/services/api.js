@@ -1,7 +1,21 @@
 import axios from 'axios'
 
 // Use environment variable for API URL, fallback to relative path for local dev
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
+let API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
+
+// Ensure the URL has a protocol if it's not a relative path
+if (API_BASE_URL !== '/api' && !API_BASE_URL.startsWith('http://') && !API_BASE_URL.startsWith('https://')) {
+  // If it's a domain without protocol, add https://
+  API_BASE_URL = `https://${API_BASE_URL}`
+}
+
+// Ensure the URL ends with /api if it's an absolute URL
+if (API_BASE_URL.startsWith('http://') || API_BASE_URL.startsWith('https://')) {
+  if (!API_BASE_URL.endsWith('/api')) {
+    // Remove trailing slash if present, then add /api
+    API_BASE_URL = API_BASE_URL.replace(/\/$/, '') + '/api'
+  }
+}
 
 const api = axios.create({
   baseURL: API_BASE_URL,

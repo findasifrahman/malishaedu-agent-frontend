@@ -31,9 +31,12 @@ In Vercel project settings, add the following environment variable:
 
 **Required:**
 - `VITE_API_BASE_URL`: Your backend API URL
-  - Example: `https://your-backend-api.railway.app/api` or `https://api.yourdomain.com/api`
-  - **Important**: Include `/api` at the end if your backend serves API routes under `/api`
-  - Leave empty for local development (uses relative path)
+  - **Format**: `https://your-backend-api.railway.app/api` or `https://api.yourdomain.com/api`
+  - **Important**: 
+    - Must include `https://` protocol
+    - Must include `/api` at the end if your backend serves API routes under `/api`
+    - Example for Railway: `https://malishaedu-ai-agent-backend-production.up.railway.app/api`
+  - Leave empty for local development (uses relative path `/api`)
 
 **Optional (if needed):**
 - Any other environment variables your app might need
