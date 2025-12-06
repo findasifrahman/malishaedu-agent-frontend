@@ -5,7 +5,7 @@ import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import ReactMarkdown from 'react-markdown'
 import LeadCaptureModal from '../components/LeadCaptureModal'
-import DocumentUploadModal from '../components/DocumentUploadModal'
+import DocumentUploadModal from '../components/DocumentUploadModal' // new file
 
 export default function ChatPage() {
   const [messages, setMessages] = useState([])
