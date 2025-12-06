@@ -19,7 +19,8 @@ export const useAuthStore = create(
           
           // Use axios directly to avoid default JSON Content-Type header
           // Pass URLSearchParams object directly - axios will handle it correctly
-          const response = await axios.post('/api/auth/login', formData, {
+          const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
+          const response = await axios.post(`${apiBaseUrl}/auth/login`, formData, {
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
             },

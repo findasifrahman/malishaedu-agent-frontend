@@ -131,7 +131,8 @@ export default function ChatPage() {
       }
       
       // Use streaming endpoint
-      const response = await fetch('/api/chat/stream', {
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
+      const response = await fetch(`${apiBaseUrl}/chat/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
