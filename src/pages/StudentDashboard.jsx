@@ -24,6 +24,8 @@ export default function StudentDashboard() {
   const [chatLoading, setChatLoading] = useState(false)
   const chatEndRef = useRef(null)
   const [chatSessionId] = useState(() => `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`)
+  const [extractedPassportData, setExtractedPassportData] = useState(null)
+  const [showPassportAutofillNotice, setShowPassportAutofillNotice] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated || user?.role !== 'student') {
@@ -123,9 +125,19 @@ export default function StudentDashboard() {
                 {studentProfile?.full_name || user?.name || 'Student'}
               </h2>
               <p className="text-gray-600 text-sm mb-4">{user?.email}</p>
-              <button className="flex items-center gap-2 text-teal-600 hover:text-teal-700 text-sm font-medium mx-auto">
+              <button className="flex items-center gap-2 text-teal-600 hover:text-teal-700 text-sm font-medium mx-auto mb-4">
                 <Camera className="w-4 h-4" />
                 Change Photo
+              </button>
+              <button
+                onClick={() => {
+                  logout()
+                  navigate('/login')
+                }}
+                className="flex items-center gap-2 text-red-600 hover:text-red-700 text-sm font-medium mx-auto"
+              >
+                <Lock className="w-4 h-4" />
+                Logout
               </button>
             </div>
             
@@ -231,13 +243,62 @@ export default function StudentDashboard() {
             </div>
 
             {/* Tab Content */}
-            {activeTab === 'personal' && <PersonalInfoTab profile={studentProfile} onUpdate={loadStudentProfile} />}
-            {activeTab === 'passport' && <PassportScoresTab profile={studentProfile} onUpdate={loadStudentProfile} />}
+            {activeTab === 'personal' && <PersonalInfoTab profile={studentProfile} onUpdate={loadStudentProfile} extractedPassportData={extractedPassportData} onPassportDataUsed={() => setExtractedPassportData(null)} />}
+            {activeTab === 'passport' && <PassportScoresTab profile={studentProfile} onUpdate={loadStudentProfile} extractedPassportData={extractedPassportData} onPassportDataUsed={() => setExtractedPassportData(null)} />}
             {activeTab === 'programs' && <ProgramsTab applications={applications} onUpdate={loadApplications} />}
-            {activeTab === 'documents' && <DocumentsTab studentId={studentProfile?.id} profile={studentProfile} onUpdate={loadStudentProfile} />}
+            {activeTab === 'documents' && <DocumentsTab studentId={studentProfile?.id} profile={studentProfile} onUpdate={loadStudentProfile} onPassportExtracted={(data) => {
+              setExtractedPassportData(data)
+              setShowPassportAutofillNotice(true)
+            }} />}
             {activeTab === 'cova' && <CovaTab profile={studentProfile} onUpdate={loadStudentProfile} />}
             {activeTab === 'security' && <SecurityTab />}
           </div>
+
+          {/* Passport Autofill Notice */}
+          {showPassportAutofillNotice && extractedPassportData && (
+            <div className="fixed top-4 right-4 bg-teal-50 border border-teal-200 rounded-lg p-4 shadow-lg z-50 max-w-md">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <h4 className="font-semibold text-teal-800 mb-2">📋 Passport Information Extracted</h4>
+                  <p className="text-sm text-teal-700 mb-3">
+                    Your passport information has been extracted. Please review and save it in the Personal Info or Passport & Scores tab.
+                  </p>
+                  <div className="text-xs text-teal-600 space-y-1 mb-3">
+                    {extractedPassportData.passport_number && <div>Passport Number: {extractedPassportData.passport_number}</div>}
+                    {extractedPassportData.name && <div>Name: {extractedPassportData.name}</div>}
+                    {extractedPassportData.date_of_birth && <div>Date of Birth: {extractedPassportData.date_of_birth}</div>}
+                    {extractedPassportData.expiry_date && <div>Expiry Date: {extractedPassportData.expiry_date}</div>}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setShowPassportAutofillNotice(false)
+                        setActiveTab('personal')
+                      }}
+                      className="text-sm bg-teal-600 text-white px-3 py-1 rounded hover:bg-teal-700"
+                    >
+                      Go to Personal Info
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowPassportAutofillNotice(false)
+                        setActiveTab('passport')
+                      }}
+                      className="text-sm bg-teal-600 text-white px-3 py-1 rounded hover:bg-teal-700"
+                    >
+                      Go to Passport & Scores
+                    </button>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowPassportAutofillNotice(false)}
+                  className="text-teal-600 hover:text-teal-800 ml-2"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Chat Window */}
           <div className="w-full lg:w-96 flex-shrink-0">
@@ -266,7 +327,7 @@ function calculateProfileComplete(profile) {
 }
 
 // Personal Info Tab Component
-function PersonalInfoTab({ profile, onUpdate }) {
+function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportDataUsed }) {
   const [formData, setFormData] = useState({
     full_name: profile?.full_name || '',
     given_name: profile?.given_name || '',
@@ -282,20 +343,77 @@ function PersonalInfoTab({ profile, onUpdate }) {
     current_address: profile?.current_address || '',
     current_country_of_residence: profile?.current_country_of_residence || '',
     highest_degree_name: profile?.highest_degree_name || '',
+    highest_degree_medium: profile?.highest_degree_medium || '',
     highest_degree_institution: profile?.highest_degree_institution || '',
     highest_degree_country: profile?.highest_degree_country || '',
     highest_degree_year: profile?.highest_degree_year || '',
     highest_degree_cgpa: profile?.highest_degree_cgpa || '',
+    number_of_published_papers: profile?.number_of_published_papers || '',
+    marital_status: profile?.marital_status || '',
+    religion: profile?.religion || '',
+    occupation: profile?.occupation || '',
     relation_with_guarantor: profile?.relation_with_guarantor || '',
     is_the_bank_guarantee_in_students_name: profile?.is_the_bank_guarantee_in_students_name !== undefined ? profile.is_the_bank_guarantee_in_students_name : true
   })
   const [saving, setSaving] = useState(false)
 
+  // Autofill from extracted passport data
+  useEffect(() => {
+    if (extractedPassportData) {
+      console.log('🔄 PersonalInfoTab: Processing extracted passport data:', extractedPassportData)
+      console.log('🔄 PersonalInfoTab: Current formData:', formData)
+      
+      setFormData(prev => {
+        const updates = {}
+        if (extractedPassportData.name && !prev.full_name) {
+          updates.full_name = extractedPassportData.name
+        }
+        if (extractedPassportData.given_name && !prev.given_name) {
+          updates.given_name = extractedPassportData.given_name
+        }
+        if (extractedPassportData.family_name && !prev.family_name) {
+          updates.family_name = extractedPassportData.family_name
+        }
+        if (extractedPassportData.father_name && !prev.father_name) {
+          updates.father_name = extractedPassportData.father_name
+        }
+        if (extractedPassportData.date_of_birth && !prev.date_of_birth) {
+          updates.date_of_birth = extractedPassportData.date_of_birth
+        }
+        if (extractedPassportData.nationality && !prev.country_of_citizenship) {
+          updates.country_of_citizenship = extractedPassportData.nationality
+        }
+        
+        if (Object.keys(updates).length > 0) {
+          console.log('✅ PersonalInfoTab: Auto-filling fields:', updates)
+          // Show success message
+          setTimeout(() => {
+            alert(`✅ Passport information has been auto-filled:\n${Object.keys(updates).map(k => `${k}: ${updates[k]}`).join('\n')}\n\nPlease review and click "Save Changes" to save.`)
+          }, 100)
+          if (onPassportDataUsed) {
+            onPassportDataUsed() // Mark as used
+          }
+          return { ...prev, ...updates }
+        } else {
+          console.log('ℹ️ PersonalInfoTab: No fields to update (all already filled or no data)')
+          return prev
+        }
+      })
+    }
+  }, [extractedPassportData, onPassportDataUsed])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)
     try {
-      await api.put('/students/me', formData)
+      // Convert empty strings to null for optional fields
+      const submitData = { ...formData }
+      Object.keys(submitData).forEach(key => {
+        if (submitData[key] === '' || submitData[key] === null) {
+          submitData[key] = null
+        }
+      })
+      await api.put('/students/me', submitData)
       onUpdate()
       alert('Profile updated successfully!')
     } catch (error) {
@@ -455,22 +573,25 @@ function PersonalInfoTab({ profile, onUpdate }) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Degree Name *</label>
-            <select
+            <input
+              type="text"
               value={formData.highest_degree_name}
               onChange={(e) => setFormData({...formData, highest_degree_name: e.target.value})}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-              required
+              placeholder="e.g., H.S.C., A-level, Bachelor, Master, etc."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Degree Medium</label>
+            <select
+              value={formData.highest_degree_medium}
+              onChange={(e) => setFormData({...formData, highest_degree_medium: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
             >
-              <option value="">Select Degree Level</option>
-              <option value="Non-degree">Non-degree</option>
-              <option value="Associate">Associate</option>
-              <option value="Bachelor">Bachelor</option>
-              <option value="Master">Master</option>
-              <option value="Doctoral (PhD)">Doctoral (PhD)</option>
-              <option value="Language">Language</option>
-              <option value="Short Program">Short Program</option>
-              <option value="Study Tour Program">Study Tour Program</option>
-              <option value="Upgrade from Junior College Student to University Student">Upgrade from Junior College Student to University Student</option>
+              <option value="">Select Medium</option>
+              <option value="English">English</option>
+              <option value="Chinese">Chinese</option>
+              <option value="Native">Native</option>
             </select>
           </div>
           <div>
@@ -520,6 +641,62 @@ function PersonalInfoTab({ profile, onUpdate }) {
               required
             />
             <p className="text-xs text-gray-500 mt-1">Enter your CGPA or GPA (out of 4.0 or 10.0 scale)</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Number of Published Papers</label>
+            <input
+              type="number"
+              min="0"
+              value={formData.number_of_published_papers}
+              onChange={(e) => setFormData({...formData, number_of_published_papers: e.target.value ? parseInt(e.target.value) : ''})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              placeholder="0"
+            />
+          </div>
+        </div>
+      </div>
+      
+      {/* Personal Information */}
+      <div className="border-t pt-6 mt-6">
+        <h4 className="text-md font-semibold text-gray-800 mb-4">Personal Information</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Marital Status</label>
+            <select
+              value={formData.marital_status}
+              onChange={(e) => setFormData({...formData, marital_status: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            >
+              <option value="">Select Status</option>
+              <option value="Single">Single</option>
+              <option value="Married">Married</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Religion</label>
+            <select
+              value={formData.religion}
+              onChange={(e) => setFormData({...formData, religion: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            >
+              <option value="">Select Religion</option>
+              <option value="Islam">Islam</option>
+              <option value="Christianity">Christianity</option>
+              <option value="Catholicism">Catholicism</option>
+              <option value="Buddhism">Buddhism</option>
+              <option value="Other">Other</option>
+              <option value="No Religion">No Religion</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Occupation</label>
+            <input
+              type="text"
+              value={formData.occupation}
+              onChange={(e) => setFormData({...formData, occupation: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              placeholder="e.g., student, business"
+            />
           </div>
         </div>
       </div>
@@ -572,11 +749,14 @@ function PersonalInfoTab({ profile, onUpdate }) {
 }
 
 // Passport & Scores Tab Component
-function PassportScoresTab({ profile, onUpdate }) {
+function PassportScoresTab({ profile, onUpdate, extractedPassportData, onPassportDataUsed }) {
   const [formData, setFormData] = useState({
     passport_number: profile?.passport_number || '',
     passport_expiry_date: profile?.passport_expiry_date ? profile.passport_expiry_date.split('T')[0] : '',
-    hsk_level: profile?.hsk_level || '',
+    hsk_score: profile?.hsk_score || '',
+    hsk_certificate_date: profile?.hsk_certificate_date ? profile.hsk_certificate_date.split('T')[0] : '',
+    hskk_level: profile?.hskk_level || '',
+    hskk_score: profile?.hskk_score || '',
     csca_status: profile?.csca_status || 'NOT_REGISTERED',
     csca_score_math: profile?.csca_score_math || '',
     csca_score_specialized_chinese: profile?.csca_score_specialized_chinese || '',
@@ -587,11 +767,51 @@ function PassportScoresTab({ profile, onUpdate }) {
   })
   const [saving, setSaving] = useState(false)
 
+  // Autofill from extracted passport data
+  useEffect(() => {
+    if (extractedPassportData) {
+      console.log('🔄 PassportScoresTab: Processing extracted passport data:', extractedPassportData)
+      console.log('🔄 PassportScoresTab: Current formData:', formData)
+      
+      setFormData(prev => {
+        const updates = {}
+        if (extractedPassportData.passport_number && !prev.passport_number) {
+          updates.passport_number = extractedPassportData.passport_number
+        }
+        if (extractedPassportData.expiry_date && !prev.passport_expiry_date) {
+          updates.passport_expiry_date = extractedPassportData.expiry_date
+        }
+        
+        if (Object.keys(updates).length > 0) {
+          console.log('✅ PassportScoresTab: Auto-filling fields:', updates)
+          // Show success message
+          setTimeout(() => {
+            alert(`✅ Passport information has been auto-filled:\n${Object.keys(updates).map(k => `${k}: ${updates[k]}`).join('\n')}\n\nPlease review and click "Save Changes" to save.`)
+          }, 100)
+          if (onPassportDataUsed) {
+            onPassportDataUsed() // Mark as used
+          }
+          return { ...prev, ...updates }
+        } else {
+          console.log('ℹ️ PassportScoresTab: No fields to update (all already filled or no data)')
+          return prev
+        }
+      })
+    }
+  }, [extractedPassportData, onPassportDataUsed])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)
     try {
-      await api.put('/students/me', formData)
+      // Convert empty strings to null for optional fields
+      const submitData = { ...formData }
+      Object.keys(submitData).forEach(key => {
+        if (submitData[key] === '' || submitData[key] === null) {
+          submitData[key] = null
+        }
+      })
+      await api.put('/students/me', submitData)
       onUpdate()
       alert('Passport & Scores updated successfully!')
     } catch (error) {
@@ -629,20 +849,51 @@ function PassportScoresTab({ profile, onUpdate }) {
       <h3 className="text-lg font-semibold text-gray-800 mb-4 mt-8">Language & Test Scores</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">HSK Level</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">HSK Score</label>
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            value={formData.hsk_score}
+            onChange={(e) => setFormData({...formData, hsk_score: e.target.value ? parseFloat(e.target.value) : ''})}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            placeholder="Enter HSK score"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">HSK Certificate Date</label>
+          <input
+            type="date"
+            value={formData.hsk_certificate_date}
+            onChange={(e) => setFormData({...formData, hsk_certificate_date: e.target.value})}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">HSKK Level</label>
           <select
-            value={formData.hsk_level}
-            onChange={(e) => setFormData({...formData, hsk_level: e.target.value ? parseInt(e.target.value) : ''})}
+            value={formData.hskk_level}
+            onChange={(e) => setFormData({...formData, hskk_level: e.target.value})}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
           >
             <option value="">Not taken</option>
-            <option value="1">HSK 1</option>
-            <option value="2">HSK 2</option>
-            <option value="3">HSK 3</option>
-            <option value="4">HSK 4</option>
-            <option value="5">HSK 5</option>
-            <option value="6">HSK 6</option>
+            <option value="Beginner">Beginner</option>
+            <option value="Elementary">Elementary</option>
+            <option value="Intermediate">Intermediate</option>
+            <option value="Advanced">Advanced</option>
           </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">HSKK Score</label>
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            value={formData.hskk_score}
+            onChange={(e) => setFormData({...formData, hskk_score: e.target.value ? parseFloat(e.target.value) : ''})}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            placeholder="Enter HSKK score"
+          />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">CSCA Status</label>
@@ -1344,7 +1595,7 @@ function ProgramsTab({ applications, onUpdate }) {
 }
 
 // Documents Tab Component
-function DocumentsTab({ studentId, profile, onUpdate }) {
+function DocumentsTab({ studentId, profile, onUpdate, onPassportExtracted }) {
   const [uploading, setUploading] = useState({})
   const [documents, setDocuments] = useState([])
   const fileInputRefs = useRef({})
@@ -1554,6 +1805,52 @@ function DocumentsTab({ studentId, profile, onUpdate }) {
           'Content-Type': 'multipart/form-data'
         }
       })
+
+      console.log('📥 Document upload response:', response.data)
+
+      // Check if passport was verified and extract data
+      if (docType.documentType === 'passport' || docType.documentType === 'passport_page') {
+        const verificationResult = response.data
+        console.log('🔍 Checking passport verification result:', verificationResult)
+        
+        // Backend returns verification_status and extracted_data
+        if (verificationResult.verification_status === 'ok' && verificationResult.extracted_data) {
+          const extracted = verificationResult.extracted_data
+          console.log('✅ Passport data extracted:', extracted)
+          
+          // Extract passport information
+          const passportData = {
+            passport_number: extracted.passport_number || null,
+            name: extracted.name || null,
+            given_name: extracted.given_name || null,
+            family_name: extracted.family_name || null,
+            father_name: extracted.father_name || null,
+            date_of_birth: extracted.date_of_birth || null,
+            nationality: extracted.nationality || null,
+            expiry_date: extracted.expiry_date || null,
+            issuing_country: extracted.issuing_country || null
+          }
+          
+          console.log('📋 Processed passport data:', passportData)
+          
+          // Only call callback if we have meaningful data
+          if (passportData.passport_number || passportData.name || passportData.date_of_birth) {
+            console.log('🚀 Calling onPassportExtracted callback')
+            if (onPassportExtracted) {
+              onPassportExtracted(passportData)
+            } else {
+              console.warn('⚠️ onPassportExtracted callback not provided')
+            }
+          } else {
+            console.warn('⚠️ No meaningful passport data to extract')
+          }
+        } else {
+          console.log('⚠️ Passport verification not successful or no extracted data:', {
+            status: verificationResult.verification_status,
+            hasExtracted: !!verificationResult.extracted_data
+          })
+        }
+      }
 
       // Reload documents and profile
       await loadDocuments()

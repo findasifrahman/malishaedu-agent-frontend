@@ -12,6 +12,46 @@ export default function AdminDashboard() {
   const [selectedConversation, setSelectedConversation] = useState(null)
   const [users, setUsers] = useState([])
   const [activeTab, setActiveTab] = useState('overview')
+  
+  // Loading states for each tab
+  const [loadingStates, setLoadingStates] = useState({
+    overview: false,
+    leads: false,
+    complaints: false,
+    chat: false,
+    users: false,
+    students: false,
+    applications: false,
+    universities: false,
+    majors: false,
+    intakes: false,
+    rag: false,
+    settings: false,
+    automation: false
+  })
+  
+  // Students pagination state
+  const [students, setStudents] = useState([])
+  const [studentsPage, setStudentsPage] = useState(1)
+  const [studentsPageSize] = useState(20)
+  const [studentsTotal, setStudentsTotal] = useState(0)
+  const [studentsSearch, setStudentsSearch] = useState('')
+  const [studentsSearchDebounced, setStudentsSearchDebounced] = useState('')
+  
+  // Debounce search for students
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setStudentsSearchDebounced(studentsSearch)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [studentsSearch])
+  
+  // Load students when search changes
+  useEffect(() => {
+    if (activeTab === 'students') {
+      loadStudents(1, studentsSearchDebounced)
+    }
+  }, [studentsSearchDebounced, activeTab])
   const [ragFile, setRagFile] = useState(null)
   const [ragText, setRagText] = useState('')
   const [uploading, setUploading] = useState(false)
@@ -65,7 +105,7 @@ export default function AdminDashboard() {
   // Form data
   const [universityForm, setUniversityForm] = useState({
     name: '', city: '', province: '', country: 'China', is_partner: true,
-    logo_url: '', description: '', website: '', contact_email: '', contact_wechat: ''
+    university_ranking: '', logo_url: '', description: '', website: '', contact_email: '', contact_wechat: ''
   })
   const [majorForm, setMajorForm] = useState({
     university_id: '', name: '', degree_level: 'Bachelor', teaching_language: 'English',
@@ -116,18 +156,25 @@ export default function AdminDashboard() {
       }
     }
     
-    // Load data after ensuring token is set
+    // Only load overview stats on initial mount
     loadStats()
-    loadLeads()
-    loadComplaints()
-    loadConversations()
-    loadUsers()
     loadModelSettings()
   }, [token, isAuthenticated, user])
   
   useEffect(() => {
-    if (activeTab === 'chat') {
+    // Lazy load data only when tab is clicked
+    if (activeTab === 'overview') {
+      // Overview already loaded on mount
+    } else if (activeTab === 'leads') {
+      loadLeads()
+    } else if (activeTab === 'complaints') {
+      loadComplaints()
+    } else if (activeTab === 'chat') {
       loadConversations()
+    } else if (activeTab === 'users') {
+      loadUsers()
+    } else if (activeTab === 'students') {
+      loadStudents()
     } else if (activeTab === 'universities') {
       loadUniversities()
     } else if (activeTab === 'majors') {
@@ -136,6 +183,7 @@ export default function AdminDashboard() {
     } else if (activeTab === 'intakes') {
       loadProgramIntakes()
       loadUniversities() // Load universities for dropdown
+      loadMajors() // Load majors for display and filtering
     } else if (activeTab === 'applications') {
       loadApplications()
       loadUniversities() // Load universities for filter
@@ -154,48 +202,82 @@ export default function AdminDashboard() {
     }
   }, [selectedMajor, activeTab])
   
+  const setLoading = (tab, loading) => {
+    setLoadingStates(prev => ({ ...prev, [tab]: loading }))
+  }
+  
   const loadStats = async () => {
+    setLoading('overview', true)
     try {
       const response = await api.get('/admin/stats')
       setStats(response.data)
     } catch (error) {
       console.error('Error loading stats:', error)
+    } finally {
+      setLoading('overview', false)
     }
   }
   
   const loadLeads = async () => {
+    setLoading('leads', true)
     try {
       const response = await api.get('/admin/leads?days=7')
       setLeads(response.data)
     } catch (error) {
       console.error('Error loading leads:', error)
+    } finally {
+      setLoading('leads', false)
     }
   }
   
   const loadComplaints = async () => {
+    setLoading('complaints', true)
     try {
       const response = await api.get('/admin/complaints')
       setComplaints(response.data)
     } catch (error) {
       console.error('Error loading complaints:', error)
+    } finally {
+      setLoading('complaints', false)
     }
   }
   
   const loadConversations = async () => {
+    setLoading('chat', true)
     try {
       const response = await api.get('/admin/conversations')
       setConversations(response.data)
     } catch (error) {
       console.error('Error loading conversations:', error)
+    } finally {
+      setLoading('chat', false)
     }
   }
   
   const loadUsers = async () => {
+    setLoading('users', true)
     try {
       const response = await api.get('/admin/users')
       setUsers(response.data)
     } catch (error) {
       console.error('Error loading users:', error)
+    } finally {
+      setLoading('users', false)
+    }
+  }
+  
+  const loadStudents = async (page = studentsPage, search = studentsSearch) => {
+    setLoading('students', true)
+    try {
+      const response = await api.get(`/admin/students?page=${page}&page_size=${studentsPageSize}&search=${encodeURIComponent(search || '')}`)
+      setStudents(response.data.items || [])
+      setStudentsTotal(response.data.total || 0)
+      setStudentsPage(page)
+    } catch (error) {
+      console.error('Error loading students:', error)
+      setStudents([])
+    } finally {
+      setLoading('students', false)
     }
   }
   
@@ -216,6 +298,7 @@ export default function AdminDashboard() {
   
   // Applications Management
   const loadApplications = async () => {
+    setLoading('applications', true)
     try {
       let url = '/admin/applications?'
       if (applicationFilters.status) url += `status=${applicationFilters.status}&`
@@ -226,6 +309,8 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Error loading applications:', error)
       setApplications([])
+    } finally {
+      setLoading('applications', false)
     }
   }
 
@@ -355,11 +440,14 @@ export default function AdminDashboard() {
   
   // Universities CRUD
   const loadUniversities = async () => {
+    setLoading('universities', true)
     try {
       const response = await api.get('/universities/')
       setUniversities(response.data)
     } catch (error) {
       console.error('Error loading universities:', error)
+    } finally {
+      setLoading('universities', false)
     }
   }
   
@@ -368,6 +456,7 @@ export default function AdminDashboard() {
       // Convert empty strings to null for optional fields
       const formData = {
         ...universityForm,
+        university_ranking: universityForm.university_ranking === '' || universityForm.university_ranking === null ? null : parseInt(universityForm.university_ranking),
         logo_url: universityForm.logo_url?.trim() || null,
         website: universityForm.website?.trim() || null,
         description: universityForm.description?.trim() || null,
@@ -393,6 +482,7 @@ export default function AdminDashboard() {
       // Convert empty strings to null for optional fields
       const formData = {
         ...universityForm,
+        university_ranking: universityForm.university_ranking === '' || universityForm.university_ranking === null ? null : parseInt(universityForm.university_ranking),
         logo_url: universityForm.logo_url?.trim() || null,
         website: universityForm.website?.trim() || null,
         description: universityForm.description?.trim() || null,
@@ -431,7 +521,7 @@ export default function AdminDashboard() {
   const resetUniversityForm = () => {
     setUniversityForm({
       name: '', city: '', province: '', country: 'China', is_partner: true,
-      logo_url: '', description: '', website: '', contact_email: '', contact_wechat: ''
+      university_ranking: '', logo_url: '', description: '', website: '', contact_email: '', contact_wechat: ''
     })
   }
   
@@ -443,6 +533,7 @@ export default function AdminDashboard() {
       province: university.province || '',
       country: university.country || 'China',
       is_partner: university.is_partner !== undefined ? university.is_partner : true,
+      university_ranking: university.university_ranking || '',
       logo_url: university.logo_url || '',
       description: university.description || '',
       website: university.website || '',
@@ -454,12 +545,15 @@ export default function AdminDashboard() {
   
   // Majors CRUD
   const loadMajors = async (universityId = null) => {
+    setLoading('majors', true)
     try {
       const url = universityId ? `/majors/?university_id=${universityId}` : '/majors/'
       const response = await api.get(url)
       setMajors(response.data)
     } catch (error) {
       console.error('Error loading majors:', error)
+    } finally {
+      setLoading('majors', false)
     }
   }
   
@@ -537,14 +631,25 @@ export default function AdminDashboard() {
   
   // Program Intakes CRUD
   const loadProgramIntakes = async (universityId = null, majorId = null) => {
+    setLoading('intakes', true)
     try {
       let url = '/program-intakes/?upcoming_only=false'
       if (universityId) url += `&university_id=${universityId}`
       if (majorId) url += `&major_id=${majorId}`
       const response = await api.get(url)
-      setProgramIntakes(response.data)
+      console.log('Program intakes response:', response.data)
+      // Ensure response.data is an array
+      if (Array.isArray(response.data)) {
+        setProgramIntakes(response.data)
+      } else {
+        console.error('Expected array but got:', typeof response.data, response.data)
+        setProgramIntakes([])
+      }
     } catch (error) {
       console.error('Error loading program intakes:', error)
+      setProgramIntakes([])
+    } finally {
+      setLoading('intakes', false)
     }
   }
   
@@ -694,7 +799,11 @@ export default function AdminDashboard() {
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
-              <BarChart3 className="w-5 h-5" />
+              {loadingStates.overview ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <BarChart3 className="w-5 h-5" />
+              )}
               Overview
             </button>
             <button
@@ -705,7 +814,11 @@ export default function AdminDashboard() {
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
-              <MessageCircle className="w-5 h-5" />
+              {loadingStates.chat ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <MessageCircle className="w-5 h-5" />
+              )}
               Chat
             </button>
             <button
@@ -716,7 +829,11 @@ export default function AdminDashboard() {
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
-              <Users className="w-5 h-5" />
+              {loadingStates.leads ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Users className="w-5 h-5" />
+              )}
               Leads
             </button>
             <button
@@ -727,7 +844,11 @@ export default function AdminDashboard() {
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
-              <MessageSquare className="w-5 h-5" />
+              {loadingStates.complaints ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <MessageSquare className="w-5 h-5" />
+              )}
               Complaints
             </button>
             <button
@@ -738,7 +859,11 @@ export default function AdminDashboard() {
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
-              <Building2 className="w-5 h-5" />
+              {loadingStates.universities ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Building2 className="w-5 h-5" />
+              )}
               Universities
             </button>
             <button
@@ -749,7 +874,11 @@ export default function AdminDashboard() {
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
-              <GraduationCap className="w-5 h-5" />
+              {loadingStates.majors ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <GraduationCap className="w-5 h-5" />
+              )}
               Majors
             </button>
             <button
@@ -760,8 +889,27 @@ export default function AdminDashboard() {
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
-              <Calendar className="w-5 h-5" />
+              {loadingStates.intakes ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Calendar className="w-5 h-5" />
+              )}
               Program Intakes
+            </button>
+            <button
+              onClick={() => setActiveTab('students')}
+              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg ${
+                activeTab === 'students'
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              {loadingStates.students ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <UserIcon className="w-5 h-5" />
+              )}
+              Students
             </button>
             <button
               onClick={() => setActiveTab('applications')}
@@ -771,7 +919,11 @@ export default function AdminDashboard() {
                   : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
-              <FileText className="w-5 h-5" />
+              {loadingStates.applications ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <FileText className="w-5 h-5" />
+              )}
               Applications
             </button>
             <button
@@ -801,35 +953,141 @@ export default function AdminDashboard() {
         
         {/* Main Content */}
         <main className="flex-1 p-6">
-          {activeTab === 'overview' && stats && (
+          {activeTab === 'overview' && (
             <div className="space-y-6">
               <h2 className="text-xl font-semibold text-gray-900">Overview</h2>
+              {loadingStates.overview ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                </div>
+              ) : stats ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white rounded-lg border border-gray-200 p-4">
+                    <p className="text-sm text-gray-600 mb-1">Leads Today</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.leads.today}</p>
+                  </div>
+                  <div className="bg-white rounded-lg border border-gray-200 p-4">
+                    <p className="text-sm text-gray-600 mb-1">Total Students</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.students.total}</p>
+                  </div>
+                  <div className="bg-white rounded-lg border border-gray-200 p-4">
+                    <p className="text-sm text-gray-600 mb-1">Pending Complaints</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.complaints.pending}</p>
+                  </div>
+                  <div className="bg-white rounded-lg border border-gray-200 p-4">
+                    <p className="text-sm text-gray-600 mb-1">Applications</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.applications.total}</p>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+          
+          {activeTab === 'students' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-gray-900">Students</h2>
+              </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <p className="text-sm text-gray-600 mb-1">Leads Today</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.leads.today}</p>
-                </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <p className="text-sm text-gray-600 mb-1">Total Students</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.students.total}</p>
-                </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <p className="text-sm text-gray-600 mb-1">Pending Complaints</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.complaints.pending}</p>
-                </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <p className="text-sm text-gray-600 mb-1">Applications</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.applications.total}</p>
+              {/* Search */}
+              <div className="bg-white rounded-lg border border-gray-200 p-4">
+                <div className="flex gap-4">
+                  <input
+                    type="text"
+                    placeholder="Search by name, email, phone, or country..."
+                    value={studentsSearch}
+                    onChange={(e) => setStudentsSearch(e.target.value)}
+                    className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
                 </div>
               </div>
+              
+              {loadingStates.students ? (
+                <div className="flex items-center justify-center py-12 bg-white rounded-lg border border-gray-200">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                </div>
+              ) : (
+                <>
+                  <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">ID</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Name</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Email</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Phone</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Country</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Documents</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Created</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {students.length === 0 ? (
+                          <tr>
+                            <td colSpan="7" className="px-4 py-8 text-center text-gray-500">
+                              No students found
+                            </td>
+                          </tr>
+                        ) : (
+                          students.map((student) => (
+                            <tr key={student.id} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 text-sm text-gray-900">{student.id}</td>
+                              <td className="px-4 py-3 text-sm text-gray-900">{student.full_name || 'N/A'}</td>
+                              <td className="px-4 py-3 text-sm text-gray-600">{student.email || 'N/A'}</td>
+                              <td className="px-4 py-3 text-sm text-gray-600">{student.phone || 'N/A'}</td>
+                              <td className="px-4 py-3 text-sm text-gray-600">{student.country_of_citizenship || 'N/A'}</td>
+                              <td className="px-4 py-3 text-sm text-gray-600">{student.document_count || 0}</td>
+                              <td className="px-4 py-3 text-sm text-gray-600">
+                                {student.created_at ? new Date(student.created_at).toLocaleDateString() : 'N/A'}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {/* Pagination */}
+                  {studentsTotal > 0 && (
+                    <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4">
+                      <div className="text-sm text-gray-700">
+                        Showing {(studentsPage - 1) * studentsPageSize + 1} to {Math.min(studentsPage * studentsPageSize, studentsTotal)} of {studentsTotal} students
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => loadStudents(studentsPage - 1, studentsSearch)}
+                          disabled={studentsPage === 1 || loadingStates.students}
+                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Previous
+                        </button>
+                        <span className="px-4 py-2 text-sm text-gray-700">
+                          Page {studentsPage} of {Math.ceil(studentsTotal / studentsPageSize)}
+                        </span>
+                        <button
+                          onClick={() => loadStudents(studentsPage + 1, studentsSearch)}
+                          disabled={studentsPage >= Math.ceil(studentsTotal / studentsPageSize) || loadingStates.students}
+                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
           
           {activeTab === 'chat' && (
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-gray-900">Student Conversations</h2>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {loadingStates.chat ? (
+                <div className="flex items-center justify-center py-12 bg-white rounded-lg border border-gray-200">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {/* Conversation List */}
                 <div className="lg:col-span-1 bg-white rounded-lg border border-gray-200 p-4">
                   <h3 className="font-medium text-gray-900 mb-3">Recent Conversations</h3>
@@ -931,13 +1189,19 @@ export default function AdminDashboard() {
                   )}
                 </div>
               </div>
+              )}
             </div>
           )}
           
           {activeTab === 'leads' && (
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-gray-900">Recent Leads</h2>
-              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              {loadingStates.leads ? (
+                <div className="flex items-center justify-center py-12 bg-white rounded-lg border border-gray-200">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                </div>
+              ) : (
+                <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
@@ -963,14 +1227,20 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
           )}
           
           {activeTab === 'complaints' && (
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-gray-900">Complaints</h2>
-              <div className="space-y-3">
-                {complaints.map((complaint) => (
+              {loadingStates.complaints ? (
+                <div className="flex items-center justify-center py-12 bg-white rounded-lg border border-gray-200">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {complaints.map((complaint) => (
                   <div key={complaint.id} className="bg-white rounded-lg border border-gray-200 p-4">
                     <div className="flex items-start justify-between mb-2">
                       <h3 className="font-medium text-gray-900">{complaint.subject}</h3>
@@ -988,7 +1258,8 @@ export default function AdminDashboard() {
                     )}
                   </div>
                 ))}
-              </div>
+                </div>
+              )}
             </div>
           )}
           
@@ -1361,6 +1632,18 @@ export default function AdminDashboard() {
                       </label>
                     </div>
                     <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">University Ranking</label>
+                      <input 
+                        type="number" 
+                        value={universityForm.university_ranking || ''} 
+                        onChange={(e) => setUniversityForm({...universityForm, university_ranking: e.target.value ? parseInt(e.target.value) : ''})} 
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2" 
+                        placeholder="e.g., 1, 2, 3..."
+                        min="1"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Optional: Enter the university's ranking (lower number = higher rank)</p>
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Logo URL</label>
                       <input type="url" value={universityForm.logo_url} onChange={(e) => setUniversityForm({...universityForm, logo_url: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
                     </div>
@@ -1398,6 +1681,7 @@ export default function AdminDashboard() {
                     <tr>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Name</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Location</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Ranking</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Partner</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
                     </tr>
@@ -1407,6 +1691,7 @@ export default function AdminDashboard() {
                       <tr key={uni.id}>
                         <td className="px-4 py-3 text-sm text-gray-900">{uni.name}</td>
                         <td className="px-4 py-3 text-sm text-gray-600">{uni.city}{uni.province ? `, ${uni.province}` : ''}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{uni.university_ranking || '-'}</td>
                         <td className="px-4 py-3 text-sm">{uni.is_partner ? <span className="text-green-600">Yes</span> : <span className="text-gray-400">No</span>}</td>
                         <td className="px-4 py-3 text-sm">
                           <div className="flex gap-2">
@@ -1430,6 +1715,13 @@ export default function AdminDashboard() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-semibold text-gray-900">Majors</h2>
+              </div>
+              {loadingStates.majors ? (
+                <div className="flex items-center justify-center py-12 bg-white rounded-lg border border-gray-200">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                </div>
+              ) : (
+                <>
                 <button
                   onClick={() => {
                     resetMajorForm()
@@ -1441,7 +1733,6 @@ export default function AdminDashboard() {
                   <Plus className="w-4 h-4" />
                   Add Major
                 </button>
-              </div>
               
               <div className="bg-white rounded-lg border border-gray-200 p-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Filter by University</label>
@@ -1556,6 +1847,8 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
+                </>
+              )}
             </div>
           )}
           
@@ -1563,18 +1856,26 @@ export default function AdminDashboard() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-semibold text-gray-900">Program Intakes</h2>
-                <button
-                  onClick={() => {
-                    resetIntakeForm()
-                    setEditingIntake(null)
-                    setShowIntakeForm(true)
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Program Intake
-                </button>
               </div>
+              {loadingStates.intakes ? (
+                <div className="flex items-center justify-center py-12 bg-white rounded-lg border border-gray-200">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-between items-center">
+                    <button
+                      onClick={() => {
+                        resetIntakeForm()
+                        setEditingIntake(null)
+                        setShowIntakeForm(true)
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Program Intake
+                    </button>
+                  </div>
               
               <div className="bg-white rounded-lg border border-gray-200 p-4 grid grid-cols-2 gap-4">
                 <div>
@@ -1803,11 +2104,12 @@ export default function AdminDashboard() {
                       if (intakeSearchTerm) {
                         const searchLower = intakeSearchTerm.toLowerCase()
                         filteredIntakes = filteredIntakes.filter(intake => {
-                          const uni = universities.find(u => u.id === intake.university_id)
-                          const major = majors.find(m => m.id === intake.major_id)
+                          // Use university_name and major_name from response, fallback to lookup
+                          const uniName = intake.university_name || universities.find(u => u.id === intake.university_id)?.name || ''
+                          const majorName = intake.major_name || majors.find(m => m.id === intake.major_id)?.name || ''
                           return (
-                            (uni?.name || '').toLowerCase().includes(searchLower) ||
-                            (major?.name || '').toLowerCase().includes(searchLower) ||
+                            uniName.toLowerCase().includes(searchLower) ||
+                            majorName.toLowerCase().includes(searchLower) ||
                             (intake.intake_term || '').toLowerCase().includes(searchLower) ||
                             String(intake.intake_year || '').includes(searchLower)
                           )
@@ -1831,13 +2133,14 @@ export default function AdminDashboard() {
                       return (
                         <>
                           {paginatedIntakes.map((intake) => {
-                            const uni = universities.find(u => u.id === intake.university_id)
-                            const major = majors.find(m => m.id === intake.major_id)
+                            // Use university_name and major_name from response, fallback to lookup if not available
+                            const uni = intake.university_name || universities.find(u => u.id === intake.university_id)?.name
+                            const major = intake.major_name || majors.find(m => m.id === intake.major_id)?.name
                             const deadline = intake.application_deadline ? new Date(intake.application_deadline) : null
                             return (
                               <tr key={intake.id}>
-                                <td className="px-4 py-3 text-sm text-gray-900">{uni?.name || 'N/A'}</td>
-                                <td className="px-4 py-3 text-sm text-gray-600">{major?.name || 'N/A'}</td>
+                                <td className="px-4 py-3 text-sm text-gray-900">{uni || 'N/A'}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600">{major || 'N/A'}</td>
                                 <td className="px-4 py-3 text-sm text-gray-600">{intake.intake_term} {intake.intake_year}</td>
                                 <td className="px-4 py-3 text-sm text-gray-600">{deadline ? deadline.toLocaleDateString() : 'N/A'}</td>
                                 <td className="px-4 py-3 text-sm text-gray-600">{intake.tuition_per_year ? `${intake.tuition_per_year} RMB` : 'N/A'}</td>
@@ -1875,11 +2178,12 @@ export default function AdminDashboard() {
                   if (intakeSearchTerm) {
                     const searchLower = intakeSearchTerm.toLowerCase()
                     filteredIntakes = filteredIntakes.filter(intake => {
-                      const uni = universities.find(u => u.id === intake.university_id)
-                      const major = majors.find(m => m.id === intake.major_id)
+                      // Use university_name and major_name from response, fallback to lookup
+                      const uniName = intake.university_name || universities.find(u => u.id === intake.university_id)?.name || ''
+                      const majorName = intake.major_name || majors.find(m => m.id === intake.major_id)?.name || ''
                       return (
-                        (uni?.name || '').toLowerCase().includes(searchLower) ||
-                        (major?.name || '').toLowerCase().includes(searchLower) ||
+                        uniName.toLowerCase().includes(searchLower) ||
+                        majorName.toLowerCase().includes(searchLower) ||
                         (intake.intake_term || '').toLowerCase().includes(searchLower) ||
                         String(intake.intake_year || '').includes(searchLower)
                       )
@@ -1926,6 +2230,8 @@ export default function AdminDashboard() {
                   )
                 })()}
               </div>
+                </>
+              )}
             </div>
           )}
           
