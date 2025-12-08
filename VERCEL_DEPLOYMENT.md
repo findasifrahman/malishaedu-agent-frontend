@@ -35,7 +35,7 @@ In Vercel project settings, add the following environment variable:
   - **Important**: 
     - Must include `https://` protocol
     - Must include `/api` at the end if your backend serves API routes under `/api`
-    - Example for Railway: `https://malishaedu-ai-agent-backend-production.up.railway.app/api`
+    - Example for Railway: `https://malishaedu-ai-agent-backend-production-160d.up.railway.app/api`
   - Leave empty for local development (uses relative path `/api`)
 
 **Optional (if needed):**
@@ -90,7 +90,7 @@ Your backend should be deployed separately. Common options:
 ## Example Environment Variables
 
 ```
-VITE_API_BASE_URL=https://malishaedu-api.railway.app/api
+VITE_API_BASE_URL=https://malishaedu-ai-agent-backend-production-160d.up.railway.app/api
 ```
 
 Or if using a custom domain:
