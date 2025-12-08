@@ -1150,6 +1150,12 @@ function CovaTab({ profile, onUpdate }) {
 function ProgramsTab({ applications, onUpdate }) {
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingApp, setEditingApp] = useState(null)
+  const [localApplications, setLocalApplications] = useState(applications)
+  
+  // Update local applications when prop changes
+  useEffect(() => {
+    setLocalApplications(applications)
+  }, [applications])
   const [universities, setUniversities] = useState([])
   const [majors, setMajors] = useState([])
   const [programIntakes, setProgramIntakes] = useState([])
@@ -1227,12 +1233,13 @@ function ProgramsTab({ applications, onUpdate }) {
       await api.put(`/students/applications/${appId}`, {
         scholarship_preference: scholarshipPreference || null
       })
-      onUpdate()
       setEditingApp(null)
-      alert('Application updated successfully!')
+      onUpdate() // Reload applications from server
+      alert('Scholarship preference updated successfully!')
     } catch (error) {
       console.error('Error updating application:', error)
-      alert('Failed to update application. Please try again.')
+      alert(error.response?.data?.detail || 'Failed to update scholarship preference. Please try again.')
+      onUpdate() // Reload to revert any local changes
     } finally {
       setLoading(false)
     }
@@ -1320,13 +1327,21 @@ function ProgramsTab({ applications, onUpdate }) {
         </div>
       ) : (
         <div className="space-y-4">
-          {applications.map((app) => (
+          {localApplications.map((app) => (
             <div key={app.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
               <div className="flex justify-between items-start mb-4">
                 <div className="flex-1">
                   <h4 className="text-lg font-semibold text-gray-800">{app.university_name}</h4>
                   <p className="text-gray-600">{app.major_name}</p>
-                  <p className="text-sm text-gray-500">{app.intake_term} {app.intake_year}</p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <p className="text-sm text-gray-500">{app.intake_term} {app.intake_year}</p>
+                    {app.degree_level && (
+                      <>
+                        <span className="text-gray-300">•</span>
+                        <p className="text-sm font-medium text-teal-600">{app.degree_level}</p>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {getStateIcon(app.application_state)}
@@ -1371,42 +1386,71 @@ function ProgramsTab({ applications, onUpdate }) {
 
               <div className="mt-4 pt-4 border-t">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-1">
                     <Award className="w-5 h-5 text-teal-600" />
-                    <div>
-                      <p className="text-xs text-gray-500">Scholarship Preference</p>
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-500 mb-1">Scholarship Preference</p>
                       {editingApp === app.id ? (
-                        <select
-                          value={app.scholarship_preference || ''}
-                          onChange={(e) => handleEditApplication(app.id, e.target.value)}
-                          onBlur={() => setEditingApp(null)}
-                          className="text-sm font-semibold text-teal-600 border border-teal-300 rounded px-2 py-1"
-                          autoFocus
-                        >
-                          <option value="">No Scholarship</option>
-                          <option value="Type-A">Type-A (Full scholarship with stipend) - 900 USD (English) / 700 USD (Chinese) Charge</option>
-                          <option value="Type-B">Type-B (Full scholarship without stipend) - 700 USD (English) / 600 USD (Chinese) Charge</option>
-                          <option value="Type-C">Type-C (Only tuition free) - 500 USD (English) / 400 USD (Chinese) Charge</option>
-                          <option value="Type-D">Type-D (Only tuition free - alternative) - 500 USD (English) / 400 USD (Chinese) Charge</option>
-                          <option value="Partial-Low">Partial Scholarship (&lt;5000 CNY/year) - 500 USD Charge</option>
-                          <option value="Partial-Mid">Partial Scholarship (5100-10000 CNY/year) - 350 USD Charge</option>
-                          <option value="Partial-High">Partial Scholarship (10000-15000 CNY/year) - 300 USD Charge</option>
-                          <option value="Self-Paid">Self-Paid - 150 USD Charge</option>
-                          <option value="None">Language Programs (No scholarship) - 150 USD Charge</option>
-                        </select>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={app.scholarship_preference || ''}
+                            onChange={(e) => {
+                              // Update local state immediately for better UX
+                              const updatedApps = localApplications.map(a => 
+                                a.id === app.id ? { ...a, scholarship_preference: e.target.value } : a
+                              )
+                              setLocalApplications(updatedApps)
+                            }}
+                            className="text-sm font-semibold text-teal-600 border border-teal-300 rounded px-2 py-1 flex-1"
+                            autoFocus
+                          >
+                            <option value="">No Scholarship</option>
+                            <option value="Type-A">Type-A (Full scholarship with stipend) - 900 USD (English) / 700 USD (Chinese) Charge</option>
+                            <option value="Type-B">Type-B (Full scholarship without stipend) - 700 USD (English) / 600 USD (Chinese) Charge</option>
+                            <option value="Type-C">Type-C (Only tuition free) - 500 USD (English) / 400 USD (Chinese) Charge</option>
+                            <option value="Type-D">Type-D (Only tuition free - alternative) - 500 USD (English) / 400 USD (Chinese) Charge</option>
+                            <option value="Partial-Low">Partial Scholarship (&lt;5000 CNY/year) - 500 USD Charge</option>
+                            <option value="Partial-Mid">Partial Scholarship (5100-10000 CNY/year) - 350 USD Charge</option>
+                            <option value="Partial-High">Partial Scholarship (10000-15000 CNY/year) - 300 USD Charge</option>
+                            <option value="Self-Paid">Self-Paid - 150 USD Charge</option>
+                            <option value="None">Language Programs (No scholarship) - 150 USD Charge</option>
+                          </select>
+                          <button
+                            onClick={() => {
+                              handleEditApplication(app.id, app.scholarship_preference)
+                            }}
+                            className="bg-teal-600 text-white px-3 py-1 rounded text-sm hover:bg-teal-700 transition-colors"
+                            disabled={loading}
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingApp(null)
+                              // Reload to revert changes
+                              onUpdate()
+                            }}
+                            className="bg-gray-300 text-gray-700 px-3 py-1 rounded text-sm hover:bg-gray-400 transition-colors"
+                            disabled={loading}
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       ) : (
-                        <p className="text-sm font-semibold text-teal-600">
-                          {app.scholarship_preference || 'Not selected'}
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold text-teal-600">
+                            {app.scholarship_preference || 'Not selected'}
+                          </p>
                           {canEdit(app) && (
                             <button
                               onClick={() => setEditingApp(app.id)}
-                              className="ml-2 text-teal-600 hover:text-teal-700"
+                              className="text-teal-600 hover:text-teal-700 p-1"
                               title="Edit scholarship preference"
                             >
-                              <Edit className="w-3 h-3 inline" />
+                              <Edit className="w-4 h-4" />
                             </button>
                           )}
-                        </p>
+                        </div>
                       )}
                     </div>
                   </div>
