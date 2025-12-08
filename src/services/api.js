@@ -3,15 +3,30 @@ import axios from 'axios'
 // Use environment variable for API URL, fallback to relative path for local dev
 let API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
+// Check if we're running on HTTPS (production)
+const isHTTPS = typeof window !== 'undefined' && window.location.protocol === 'https:'
+const isLocalhost = typeof window !== 'undefined' && 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+
 // Ensure the URL has a protocol if it's not a relative path
 if (API_BASE_URL !== '/api' && !API_BASE_URL.startsWith('http://') && !API_BASE_URL.startsWith('https://')) {
   // If it's a domain without protocol, add https://
   API_BASE_URL = `https://${API_BASE_URL}`
 }
 
-// Force HTTPS for production URLs (mixed content security)
-if (API_BASE_URL.startsWith('http://') && !API_BASE_URL.includes('localhost')) {
-  // Convert http:// to https:// for non-localhost URLs
+// CRITICAL: Force HTTPS for production URLs (mixed content security)
+// If the page is served over HTTPS, the API must also use HTTPS
+if (isHTTPS && !isLocalhost) {
+  // If we're on HTTPS (production), force API to use HTTPS
+  if (API_BASE_URL.startsWith('http://')) {
+    API_BASE_URL = API_BASE_URL.replace('http://', 'https://')
+  }
+  // Also ensure any URL without protocol uses HTTPS
+  if (API_BASE_URL !== '/api' && !API_BASE_URL.startsWith('https://')) {
+    API_BASE_URL = `https://${API_BASE_URL}`
+  }
+} else if (API_BASE_URL.startsWith('http://') && !API_BASE_URL.includes('localhost') && !isLocalhost) {
+  // For non-localhost URLs, always prefer HTTPS
   API_BASE_URL = API_BASE_URL.replace('http://', 'https://')
 }
 
@@ -21,6 +36,12 @@ if (API_BASE_URL.startsWith('http://') || API_BASE_URL.startsWith('https://')) {
     // Remove trailing slash if present, then add /api
     API_BASE_URL = API_BASE_URL.replace(/\/$/, '') + '/api'
   }
+}
+
+// Debug logging in development
+if (import.meta.env.DEV) {
+  console.log('API Base URL configured:', API_BASE_URL)
+  console.log('Page protocol:', typeof window !== 'undefined' ? window.location.protocol : 'N/A')
 }
 
 const api = axios.create({
@@ -33,6 +54,19 @@ const api = axios.create({
 // Request interceptor to add token from storage on every request
 api.interceptors.request.use(
   (config) => {
+    // CRITICAL: Prevent mixed content (HTTP requests from HTTPS pages)
+    if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+      const fullUrl = config.baseURL || API_BASE_URL
+      const requestUrl = typeof config.url === 'string' ? config.url : ''
+      const combinedUrl = fullUrl + requestUrl
+      
+      // If we detect an HTTP URL when on HTTPS, force it to HTTPS
+      if (combinedUrl.startsWith('http://') && !combinedUrl.includes('localhost')) {
+        console.error('⚠️ Mixed content detected! Converting HTTP to HTTPS:', combinedUrl)
+        config.baseURL = config.baseURL?.replace('http://', 'https://') || API_BASE_URL.replace('http://', 'https://')
+      }
+    }
+    
     // Skip adding token for auth endpoints (login/signup)
     const url = config.url || ''
     if (url.includes('/auth/login') || url.includes('/auth/signup')) {
