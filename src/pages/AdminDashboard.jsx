@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'
-import { BarChart3, Users, FileText, MessageSquare, Settings, Upload, MessageCircle, Bot, User as UserIcon, Building2, GraduationCap, Calendar, Plus, Edit, Trash2, X, Play, Loader2 } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { BarChart3, Users, FileText, MessageSquare, Settings, Upload, MessageCircle, Bot, User as UserIcon, Building2, GraduationCap, Calendar, Plus, Edit, Trash2, X, Play, Loader2, Lock, ChevronDown, ChevronUp } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import ReactMarkdown from 'react-markdown'
+import MajorsTable from '../components/admin/MajorsTable'
+import ProgramDocumentsTable from '../components/admin/ProgramDocumentsTable'
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState(null)
@@ -37,6 +39,13 @@ export default function AdminDashboard() {
   const [studentsTotal, setStudentsTotal] = useState(0)
   const [studentsSearch, setStudentsSearch] = useState('')
   const [studentsSearchDebounced, setStudentsSearchDebounced] = useState('')
+  const [expandedStudents, setExpandedStudents] = useState(new Set())
+  const [studentApplications, setStudentApplications] = useState({})
+  const [showStudentModal, setShowStudentModal] = useState(false)
+  const [editingStudent, setEditingStudent] = useState(null)
+  const [studentForm, setStudentForm] = useState({
+    email: '', password: '', full_name: '', phone: '', country_of_citizenship: '', passport_number: ''
+  })
   
   // Debounce search for students
   useEffect(() => {
@@ -63,7 +72,9 @@ export default function AdminDashboard() {
   const [majors, setMajors] = useState([])
   const [programIntakes, setProgramIntakes] = useState([])
   const [selectedUniversity, setSelectedUniversity] = useState(null)
-  const [selectedMajor, setSelectedMajor] = useState(null)
+  const [selectedIntakeTerm, setSelectedIntakeTerm] = useState(null)
+  const [selectedIntakeYear, setSelectedIntakeYear] = useState(null)
+  const [selectedTeachingLanguage, setSelectedTeachingLanguage] = useState(null)
   
   // Applications state
   const [applications, setApplications] = useState([])
@@ -98,14 +109,69 @@ export default function AdminDashboard() {
   const [showUniversityForm, setShowUniversityForm] = useState(false)
   const [showMajorForm, setShowMajorForm] = useState(false)
   const [showIntakeForm, setShowIntakeForm] = useState(false)
+  const [intakeFormSections, setIntakeFormSections] = useState({
+    basic: true,
+    degree: true,
+    fees: true,
+    requirements: true,
+    language: true,
+    bankStatement: true,
+    insideChina: true,
+    scholarship: true,
+    documents: true,
+    examRequirements: true,
+    intakeScholarships: true,
+    notes: true
+  })
+  const [programDocuments, setProgramDocuments] = useState([])  // Documents for current intake
+  const [allProgramDocuments, setAllProgramDocuments] = useState([])  // All documents for standalone view
+  const [selectedIntakeForDocuments, setSelectedIntakeForDocuments] = useState(null)
+  const [documentForm, setDocumentForm] = useState({
+    name: '', is_required: true, rules: '', applies_to: ''
+  })
+  const [editingDocument, setEditingDocument] = useState(null)
+  
+  // Scholarships state
+  const [scholarships, setScholarships] = useState([])
+  const [programIntakeScholarships, setProgramIntakeScholarships] = useState([])  // Scholarships for current intake
+  const [showScholarshipForm, setShowScholarshipForm] = useState(false)
+  const [scholarshipForm, setScholarshipForm] = useState({
+    name: '', provider: '', notes: ''
+  })
+  const [editingScholarship, setEditingScholarship] = useState(null)
+  const [programIntakeScholarshipForm, setProgramIntakeScholarshipForm] = useState({
+    scholarship_id: '', covers_tuition: false, covers_accommodation: false, covers_insurance: false,
+    tuition_waiver_percent: '', living_allowance_monthly: '', living_allowance_yearly: '',
+    first_year_only: false, renewal_required: false, deadline: '', eligibility_note: ''
+  })
+  const [editingProgramIntakeScholarship, setEditingProgramIntakeScholarship] = useState(null)
+  
+  // Partners state
+  const [partners, setPartners] = useState([])
+  const [showPartnerForm, setShowPartnerForm] = useState(false)
+  const [editingPartner, setEditingPartner] = useState(null)
+  const [partnerForm, setPartnerForm] = useState({
+    name: '', company_name: '', phone1: '', phone2: '', email: '', city: '', country: '', 
+    full_address: '', website: '', notes: '', password: ''
+  })
+  
+  // Program Exam Requirements state
+  const [programExamRequirements, setProgramExamRequirements] = useState([])  // Exam requirements for current intake
+  const [examRequirementForm, setExamRequirementForm] = useState({
+    exam_name: '', required: true, subjects: '', min_level: '', min_score: '', exam_language: '', notes: ''
+  })
+  const [editingExamRequirement, setEditingExamRequirement] = useState(null)
+  
   const [editingUniversity, setEditingUniversity] = useState(null)
   const [editingMajor, setEditingMajor] = useState(null)
   const [editingIntake, setEditingIntake] = useState(null)
   
   // Form data
   const [universityForm, setUniversityForm] = useState({
-    name: '', city: '', province: '', country: 'China', is_partner: true,
-    university_ranking: '', logo_url: '', description: '', website: '', contact_email: '', contact_wechat: ''
+    name: '', name_cn: '', city: '', province: '', country: 'China', is_partner: true,
+    university_ranking: '', world_ranking_band: '', national_ranking: '', 
+    aliases: '', project_tags: '', default_currency: 'CNY', is_active: true,
+    logo_url: '', description: '', website: '', contact_email: '', contact_wechat: ''
   })
   const [majorForm, setMajorForm] = useState({
     university_id: '', name: '', degree_level: 'Bachelor', teaching_language: 'English',
@@ -117,13 +183,34 @@ export default function AdminDashboard() {
     application_fee: '', accommodation_fee: '', service_fee: '', medical_insurance_fee: '',
     teaching_language: 'English', duration_years: '', degree_type: '', 
     arrival_medical_checkup_fee: '', admission_process: '', accommodation_note: '', visa_extension_fee: '',
-    notes: '', scholarship_info: ''
+    notes: '', scholarship_info: '',
+    // ========== NEW FIELDS ==========
+    program_start_date: '', deadline_type: '', scholarship_available: '',
+    age_min: '', age_max: '', min_average_score: '',
+    interview_required: false, written_test_required: false, acceptance_letter_required: false,
+    inside_china_applicants_allowed: false, inside_china_extra_requirements: '',
+    bank_statement_required: false, bank_statement_amount: '', bank_statement_currency: 'USD', bank_statement_note: '',
+    hsk_required: false, hsk_level: '', hsk_min_score: '',
+    english_test_required: false, english_test_note: '',
+    currency: 'CNY', accommodation_fee_period: '', medical_insurance_fee_period: '', arrival_medical_checkup_is_one_time: true
   })
   
   // Pagination and search for program intakes
   const [intakeSearchTerm, setIntakeSearchTerm] = useState('')
+  const [intakeSearchDebounced, setIntakeSearchDebounced] = useState('')
   const [intakeCurrentPage, setIntakeCurrentPage] = useState(1)
-  const [intakePageSize] = useState(10)
+  const [intakePageSize] = useState(20)
+  const [intakeTotal, setIntakeTotal] = useState(0)
+  const [intakeTotalPages, setIntakeTotalPages] = useState(0)
+  
+  // Debounce search for intakes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIntakeSearchDebounced(intakeSearchTerm)
+      setIntakeCurrentPage(1)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [intakeSearchTerm])
   
   const { logout, token, isAuthenticated, user } = useAuthStore()
   
@@ -178,12 +265,21 @@ export default function AdminDashboard() {
     } else if (activeTab === 'universities') {
       loadUniversities()
     } else if (activeTab === 'majors') {
-      loadMajors()
       loadUniversities() // Load universities for dropdown
+      // Majors are loaded by MajorsTable component
     } else if (activeTab === 'intakes') {
-      loadProgramIntakes()
       loadUniversities() // Load universities for dropdown
-      loadMajors() // Load majors for display and filtering
+      // Load a limited set of majors for the dropdown (not all)
+      loadMajorsForDropdown()
+      // loadProgramIntakes is called via useEffect when filters change
+    } else if (activeTab === 'program-documents') {
+      loadUniversities() // Load universities for filter
+      loadMajorsForDropdown() // Load majors for filter
+      loadProgramIntakes() // Load program intakes for filter
+    } else if (activeTab === 'scholarships') {
+      loadScholarships()
+    } else if (activeTab === 'partners') {
+      loadPartners()
     } else if (activeTab === 'applications') {
       loadApplications()
       loadUniversities() // Load universities for filter
@@ -196,11 +292,7 @@ export default function AdminDashboard() {
     }
   }, [selectedUniversity, activeTab])
   
-  useEffect(() => {
-    if (selectedMajor && activeTab === 'intakes') {
-      loadProgramIntakes(null, selectedMajor)
-    }
-  }, [selectedMajor, activeTab])
+  // Removed - now handled by the main useEffect for intakes
   
   const setLoading = (tab, loading) => {
     setLoadingStates(prev => ({ ...prev, [tab]: loading }))
@@ -266,7 +358,7 @@ export default function AdminDashboard() {
     }
   }
   
-  const loadStudents = async (page = studentsPage, search = studentsSearch) => {
+  const loadStudents = async (page = studentsPage, search = studentsSearchDebounced) => {
     setLoading('students', true)
     try {
       const response = await api.get(`/admin/students?page=${page}&page_size=${studentsPageSize}&search=${encodeURIComponent(search || '')}`)
@@ -279,6 +371,76 @@ export default function AdminDashboard() {
     } finally {
       setLoading('students', false)
     }
+  }
+  
+  const loadStudentApplications = async (studentId) => {
+    try {
+      const response = await api.get(`/admin/students/${studentId}/applications`)
+      setStudentApplications(prev => ({ ...prev, [studentId]: response.data || [] }))
+    } catch (error) {
+      console.error('Error loading student applications:', error)
+      setStudentApplications(prev => ({ ...prev, [studentId]: [] }))
+    }
+  }
+  
+  const toggleStudentExpansion = (studentId) => {
+    const newExpanded = new Set(expandedStudents)
+    if (newExpanded.has(studentId)) {
+      newExpanded.delete(studentId)
+    } else {
+      newExpanded.add(studentId)
+      // Load applications if not already loaded
+      if (!studentApplications[studentId]) {
+        loadStudentApplications(studentId)
+      }
+    }
+    setExpandedStudents(newExpanded)
+  }
+  
+  const handleCreateStudent = async () => {
+    try {
+      const response = await api.post('/admin/students', studentForm)
+      alert(`Student created successfully! Password: ${response.data.password || 'N/A'}\n\nPlease share this password with the student.`)
+      setShowStudentModal(false)
+      resetStudentForm()
+      loadStudents()
+    } catch (error) {
+      console.error('Error creating student:', error)
+      alert(error.response?.data?.detail || 'Failed to create student')
+    }
+  }
+  
+  const handleUpdateStudent = async () => {
+    try {
+      await api.put(`/admin/students/${editingStudent.id}`, studentForm)
+      alert('Student updated successfully!')
+      setShowStudentModal(false)
+      setEditingStudent(null)
+      resetStudentForm()
+      loadStudents()
+    } catch (error) {
+      console.error('Error updating student:', error)
+      alert(error.response?.data?.detail || 'Failed to update student')
+    }
+  }
+  
+  const resetStudentForm = () => {
+    setStudentForm({
+      email: '', password: '', full_name: '', phone: '', country_of_citizenship: '', passport_number: ''
+    })
+  }
+  
+  const startEditStudent = (student) => {
+    setEditingStudent(student)
+    setStudentForm({
+      email: student.email || '',
+      password: '', // Don't show password
+      full_name: student.full_name || '',
+      phone: student.phone || '',
+      country_of_citizenship: student.country_of_citizenship || '',
+      passport_number: student.passport_number || ''
+    })
+    setShowStudentModal(true)
   }
   
   const loadModelSettings = async () => {
@@ -442,7 +604,7 @@ export default function AdminDashboard() {
   const loadUniversities = async () => {
     setLoading('universities', true)
     try {
-      const response = await api.get('/universities/')
+      const response = await api.get('/universities')
       setUniversities(response.data)
     } catch (error) {
       console.error('Error loading universities:', error)
@@ -453,10 +615,24 @@ export default function AdminDashboard() {
   
   const handleCreateUniversity = async () => {
     try {
+      // Convert aliases and project_tags from comma-separated strings to arrays
+      const aliasesArray = universityForm.aliases 
+        ? universityForm.aliases.split(',').map(a => a.trim()).filter(a => a.length > 0)
+        : null
+      const projectTagsArray = universityForm.project_tags 
+        ? universityForm.project_tags.split(',').map(t => t.trim()).filter(t => t.length > 0)
+        : null
+      
       // Convert empty strings to null for optional fields
       const formData = {
         ...universityForm,
         university_ranking: universityForm.university_ranking === '' || universityForm.university_ranking === null ? null : parseInt(universityForm.university_ranking),
+        national_ranking: universityForm.national_ranking === '' || universityForm.national_ranking === null ? null : parseInt(universityForm.national_ranking),
+        aliases: aliasesArray,
+        project_tags: projectTagsArray,
+        name_cn: universityForm.name_cn?.trim() || null,
+        world_ranking_band: universityForm.world_ranking_band?.trim() || null,
+        default_currency: universityForm.default_currency?.trim() || 'CNY',
         logo_url: universityForm.logo_url?.trim() || null,
         website: universityForm.website?.trim() || null,
         description: universityForm.description?.trim() || null,
@@ -465,7 +641,7 @@ export default function AdminDashboard() {
         city: universityForm.city?.trim() || null,
         province: universityForm.province?.trim() || null,
       }
-      await api.post('/universities/', formData)
+      await api.post('/universities', formData)
       alert('University created successfully!')
       setShowUniversityForm(false)
       resetUniversityForm()
@@ -479,10 +655,24 @@ export default function AdminDashboard() {
   
   const handleUpdateUniversity = async () => {
     try {
+      // Convert aliases and project_tags from comma-separated strings to arrays
+      const aliasesArray = universityForm.aliases 
+        ? universityForm.aliases.split(',').map(a => a.trim()).filter(a => a.length > 0)
+        : null
+      const projectTagsArray = universityForm.project_tags 
+        ? universityForm.project_tags.split(',').map(t => t.trim()).filter(t => t.length > 0)
+        : null
+      
       // Convert empty strings to null for optional fields
       const formData = {
         ...universityForm,
         university_ranking: universityForm.university_ranking === '' || universityForm.university_ranking === null ? null : parseInt(universityForm.university_ranking),
+        national_ranking: universityForm.national_ranking === '' || universityForm.national_ranking === null ? null : parseInt(universityForm.national_ranking),
+        aliases: aliasesArray,
+        project_tags: projectTagsArray,
+        name_cn: universityForm.name_cn?.trim() || null,
+        world_ranking_band: universityForm.world_ranking_band?.trim() || null,
+        default_currency: universityForm.default_currency?.trim() || 'CNY',
         logo_url: universityForm.logo_url?.trim() || null,
         website: universityForm.website?.trim() || null,
         description: universityForm.description?.trim() || null,
@@ -520,20 +710,37 @@ export default function AdminDashboard() {
   
   const resetUniversityForm = () => {
     setUniversityForm({
-      name: '', city: '', province: '', country: 'China', is_partner: true,
-      university_ranking: '', logo_url: '', description: '', website: '', contact_email: '', contact_wechat: ''
+      name: '', name_cn: '', city: '', province: '', country: 'China', is_partner: true,
+      university_ranking: '', world_ranking_band: '', national_ranking: '', 
+      aliases: '', project_tags: '', default_currency: 'CNY', is_active: true,
+      logo_url: '', description: '', website: '', contact_email: '', contact_wechat: ''
     })
   }
   
   const startEditUniversity = (university) => {
     setEditingUniversity(university)
+    // Convert arrays to comma-separated strings for display
+    const aliasesStr = Array.isArray(university.aliases) 
+      ? university.aliases.join(', ') 
+      : (university.aliases || '')
+    const projectTagsStr = Array.isArray(university.project_tags) 
+      ? university.project_tags.join(', ') 
+      : (university.project_tags || '')
+    
     setUniversityForm({
       name: university.name || '',
+      name_cn: university.name_cn || '',
       city: university.city || '',
       province: university.province || '',
       country: university.country || 'China',
       is_partner: university.is_partner !== undefined ? university.is_partner : true,
       university_ranking: university.university_ranking || '',
+      world_ranking_band: university.world_ranking_band || '',
+      national_ranking: university.national_ranking || '',
+      aliases: aliasesStr,
+      project_tags: projectTagsStr,
+      default_currency: university.default_currency || 'CNY',
+      is_active: university.is_active !== undefined ? university.is_active : true,
       logo_url: university.logo_url || '',
       description: university.description || '',
       website: university.website || '',
@@ -543,19 +750,28 @@ export default function AdminDashboard() {
     setShowUniversityForm(true)
   }
   
-  // Majors CRUD
-  const loadMajors = async (universityId = null) => {
-    setLoading('majors', true)
+  // Majors CRUD - for dropdowns (limited results)
+  const loadMajorsForDropdown = async (universityId = null) => {
     try {
-      const url = universityId ? `/majors/?university_id=${universityId}` : '/majors/'
+      let url = `/majors?page=1&page_size=1000` // Get up to 1000 for dropdown
+      if (universityId) url += `&university_id=${universityId}`
       const response = await api.get(url)
-      setMajors(response.data)
+      // Handle both paginated and non-paginated responses
+      if (response.data.items) {
+        setMajors(response.data.items)
+      } else if (Array.isArray(response.data)) {
+        setMajors(response.data)
+      } else {
+        setMajors([])
+      }
     } catch (error) {
-      console.error('Error loading majors:', error)
-    } finally {
-      setLoading('majors', false)
+      console.error('Error loading majors for dropdown:', error)
+      setMajors([])
     }
   }
+  
+  // Legacy function for backward compatibility
+  const loadMajors = loadMajorsForDropdown
   
   const handleCreateMajor = async () => {
     try {
@@ -564,7 +780,7 @@ export default function AdminDashboard() {
         university_id: parseInt(majorForm.university_id),
         duration_years: majorForm.duration_years ? parseFloat(majorForm.duration_years) : null
       }
-      await api.post('/majors/', data)
+      await api.post('/majors', data)
       alert('Major created successfully!')
       setShowMajorForm(false)
       resetMajorForm()
@@ -629,29 +845,50 @@ export default function AdminDashboard() {
     setShowMajorForm(true)
   }
   
-  // Program Intakes CRUD
-  const loadProgramIntakes = async (universityId = null, majorId = null) => {
+  // Program Intakes CRUD - with server-side pagination
+  const loadProgramIntakes = async () => {
     setLoading('intakes', true)
     try {
-      let url = '/program-intakes/?upcoming_only=false'
-      if (universityId) url += `&university_id=${universityId}`
-      if (majorId) url += `&major_id=${majorId}`
+      let url = `/program-intakes?upcoming_only=false&page=${intakeCurrentPage}&page_size=${intakePageSize}`
+      if (selectedUniversity) url += `&university_id=${selectedUniversity}`
+      if (selectedIntakeTerm) url += `&intake_term=${selectedIntakeTerm}`
+      if (selectedIntakeYear) url += `&intake_year=${selectedIntakeYear}`
+      if (selectedTeachingLanguage) url += `&teaching_language=${encodeURIComponent(selectedTeachingLanguage)}`
+      if (intakeSearchDebounced) url += `&search=${encodeURIComponent(intakeSearchDebounced)}`
+      
       const response = await api.get(url)
-      console.log('Program intakes response:', response.data)
-      // Ensure response.data is an array
-      if (Array.isArray(response.data)) {
+      if (response.data.items) {
+        // New paginated API format
+        setProgramIntakes(response.data.items)
+        setIntakeTotal(response.data.total)
+        setIntakeTotalPages(response.data.total_pages)
+      } else if (Array.isArray(response.data)) {
+        // Fallback for old API format
         setProgramIntakes(response.data)
+        setIntakeTotal(response.data.length)
+        setIntakeTotalPages(1)
       } else {
-        console.error('Expected array but got:', typeof response.data, response.data)
+        console.error('Unexpected response format:', response.data)
         setProgramIntakes([])
+        setIntakeTotal(0)
+        setIntakeTotalPages(0)
       }
     } catch (error) {
       console.error('Error loading program intakes:', error)
       setProgramIntakes([])
+      setIntakeTotal(0)
+      setIntakeTotalPages(0)
     } finally {
       setLoading('intakes', false)
     }
   }
+  
+  // Reload intakes when filters or pagination changes
+  useEffect(() => {
+    if (activeTab === 'intakes') {
+      loadProgramIntakes()
+    }
+  }, [selectedUniversity, selectedIntakeTerm, selectedIntakeYear, selectedTeachingLanguage, intakeSearchDebounced, intakeCurrentPage, activeTab])
   
   const handleCreateIntake = async () => {
     try {
@@ -661,6 +898,7 @@ export default function AdminDashboard() {
         major_id: parseInt(intakeForm.major_id),
         intake_year: parseInt(intakeForm.intake_year),
         application_deadline: new Date(intakeForm.application_deadline).toISOString(),
+        program_start_date: intakeForm.program_start_date ? new Date(intakeForm.program_start_date).toISOString().split('T')[0] : null,
         tuition_per_semester: intakeForm.tuition_per_semester ? parseFloat(intakeForm.tuition_per_semester) : null,
         tuition_per_year: intakeForm.tuition_per_year ? parseFloat(intakeForm.tuition_per_year) : null,
         application_fee: intakeForm.application_fee ? parseFloat(intakeForm.application_fee) : null,
@@ -673,13 +911,50 @@ export default function AdminDashboard() {
         arrival_medical_checkup_fee: intakeForm.arrival_medical_checkup_fee ? parseFloat(intakeForm.arrival_medical_checkup_fee) : null,
         admission_process: intakeForm.admission_process || null,
         accommodation_note: intakeForm.accommodation_note || null,
-        visa_extension_fee: intakeForm.visa_extension_fee ? parseFloat(intakeForm.visa_extension_fee) : null
+        visa_extension_fee: intakeForm.visa_extension_fee ? parseFloat(intakeForm.visa_extension_fee) : null,
+        // ========== NEW FIELDS ==========
+        deadline_type: intakeForm.deadline_type || null,
+        scholarship_available: intakeForm.scholarship_available === '' ? null : (intakeForm.scholarship_available === 'true' || intakeForm.scholarship_available === true),
+        age_min: intakeForm.age_min ? parseInt(intakeForm.age_min) : null,
+        age_max: intakeForm.age_max ? parseInt(intakeForm.age_max) : null,
+        min_average_score: intakeForm.min_average_score ? parseFloat(intakeForm.min_average_score) : null,
+        interview_required: intakeForm.interview_required || null,
+        written_test_required: intakeForm.written_test_required || null,
+        acceptance_letter_required: intakeForm.acceptance_letter_required || null,
+        inside_china_applicants_allowed: intakeForm.inside_china_applicants_allowed || null,
+        inside_china_extra_requirements: intakeForm.inside_china_extra_requirements || null,
+        bank_statement_required: intakeForm.bank_statement_required || null,
+        bank_statement_amount: intakeForm.bank_statement_amount ? parseFloat(intakeForm.bank_statement_amount) : null,
+        bank_statement_currency: intakeForm.bank_statement_currency || null,
+        bank_statement_note: intakeForm.bank_statement_note || null,
+        hsk_required: intakeForm.hsk_required || null,
+        hsk_level: intakeForm.hsk_level ? parseInt(intakeForm.hsk_level) : null,
+        hsk_min_score: intakeForm.hsk_min_score ? parseInt(intakeForm.hsk_min_score) : null,
+        english_test_required: intakeForm.english_test_required || null,
+        english_test_note: intakeForm.english_test_note || null,
+        currency: intakeForm.currency || 'CNY',
+        accommodation_fee_period: intakeForm.accommodation_fee_period || null,
+        medical_insurance_fee_period: intakeForm.medical_insurance_fee_period || null,
+        arrival_medical_checkup_is_one_time: intakeForm.arrival_medical_checkup_is_one_time !== undefined ? intakeForm.arrival_medical_checkup_is_one_time : true
       }
-      await api.post('/program-intakes/', data)
+      const response = await api.post('/program-intakes', data)
       alert('Program intake created successfully!')
-      setShowIntakeForm(false)
-      resetIntakeForm()
-      loadProgramIntakes(selectedUniversity, selectedMajor)
+      const newIntakeId = response.data.id
+      // If documents section was open, keep form open and allow document management
+      if (intakeFormSections.documents && newIntakeId) {
+        // Update editingIntake to allow document management
+        setEditingIntake({ ...response.data, id: newIntakeId })
+        // Load documents for the newly created intake
+        loadProgramDocuments(newIntakeId)
+      } else {
+        setShowIntakeForm(false)
+        setEditingIntake(null)
+        resetIntakeForm()
+        setProgramDocuments([])
+        setDocumentForm({ name: '', is_required: true, rules: '', applies_to: '' })
+        setEditingDocument(null)
+        loadProgramIntakes()
+      }
     } catch (error) {
       console.error('Error creating program intake:', error)
       alert('Failed to create program intake')
@@ -691,6 +966,7 @@ export default function AdminDashboard() {
       const data = {
         ...intakeForm,
         application_deadline: new Date(intakeForm.application_deadline).toISOString(),
+        program_start_date: intakeForm.program_start_date ? new Date(intakeForm.program_start_date).toISOString().split('T')[0] : null,
         tuition_per_semester: intakeForm.tuition_per_semester ? parseFloat(intakeForm.tuition_per_semester) : null,
         tuition_per_year: intakeForm.tuition_per_year ? parseFloat(intakeForm.tuition_per_year) : null,
         application_fee: intakeForm.application_fee ? parseFloat(intakeForm.application_fee) : null,
@@ -703,14 +979,50 @@ export default function AdminDashboard() {
         arrival_medical_checkup_fee: intakeForm.arrival_medical_checkup_fee ? parseFloat(intakeForm.arrival_medical_checkup_fee) : null,
         admission_process: intakeForm.admission_process || null,
         accommodation_note: intakeForm.accommodation_note || null,
-        visa_extension_fee: intakeForm.visa_extension_fee ? parseFloat(intakeForm.visa_extension_fee) : null
+        visa_extension_fee: intakeForm.visa_extension_fee ? parseFloat(intakeForm.visa_extension_fee) : null,
+        // ========== NEW FIELDS ==========
+        deadline_type: intakeForm.deadline_type || null,
+        scholarship_available: intakeForm.scholarship_available === '' ? null : (intakeForm.scholarship_available === 'true' || intakeForm.scholarship_available === true),
+        age_min: intakeForm.age_min ? parseInt(intakeForm.age_min) : null,
+        age_max: intakeForm.age_max ? parseInt(intakeForm.age_max) : null,
+        min_average_score: intakeForm.min_average_score ? parseFloat(intakeForm.min_average_score) : null,
+        interview_required: intakeForm.interview_required || null,
+        written_test_required: intakeForm.written_test_required || null,
+        acceptance_letter_required: intakeForm.acceptance_letter_required || null,
+        inside_china_applicants_allowed: intakeForm.inside_china_applicants_allowed || null,
+        inside_china_extra_requirements: intakeForm.inside_china_extra_requirements || null,
+        bank_statement_required: intakeForm.bank_statement_required || null,
+        bank_statement_amount: intakeForm.bank_statement_amount ? parseFloat(intakeForm.bank_statement_amount) : null,
+        bank_statement_currency: intakeForm.bank_statement_currency || null,
+        bank_statement_note: intakeForm.bank_statement_note || null,
+        hsk_required: intakeForm.hsk_required || null,
+        hsk_level: intakeForm.hsk_level ? parseInt(intakeForm.hsk_level) : null,
+        hsk_min_score: intakeForm.hsk_min_score ? parseInt(intakeForm.hsk_min_score) : null,
+        english_test_required: intakeForm.english_test_required || null,
+        english_test_note: intakeForm.english_test_note || null,
+        currency: intakeForm.currency || 'CNY',
+        accommodation_fee_period: intakeForm.accommodation_fee_period || null,
+        medical_insurance_fee_period: intakeForm.medical_insurance_fee_period || null,
+        arrival_medical_checkup_is_one_time: intakeForm.arrival_medical_checkup_is_one_time !== undefined ? intakeForm.arrival_medical_checkup_is_one_time : true
       }
       await api.put(`/program-intakes/${editingIntake.id}`, data)
       alert('Program intake updated successfully!')
-      setShowIntakeForm(false)
-      setEditingIntake(null)
-      resetIntakeForm()
-      loadProgramIntakes(selectedUniversity, selectedMajor)
+      // Reload documents, scholarships, and exam requirements if sections are open
+      if (intakeFormSections.documents) {
+        loadProgramDocuments(editingIntake.id)
+      }
+      if (intakeFormSections.intakeScholarships) {
+        loadProgramIntakeScholarships(editingIntake.id)
+      }
+      if (intakeFormSections.examRequirements) {
+        loadProgramExamRequirements(editingIntake.id)
+      }
+      if (!intakeFormSections.documents && !intakeFormSections.intakeScholarships && !intakeFormSections.examRequirements) {
+        setShowIntakeForm(false)
+        setEditingIntake(null)
+        resetIntakeForm()
+        loadProgramIntakes()
+      }
     } catch (error) {
       console.error('Error updating program intake:', error)
       alert('Failed to update program intake')
@@ -724,7 +1036,7 @@ export default function AdminDashboard() {
     try {
       await api.delete(`/program-intakes/${id}`)
       alert('Program intake deleted successfully!')
-      loadProgramIntakes(selectedUniversity, selectedMajor)
+      loadProgramIntakes()
     } catch (error) {
       console.error('Error deleting program intake:', error)
       alert('Failed to delete program intake')
@@ -733,19 +1045,29 @@ export default function AdminDashboard() {
   
   const resetIntakeForm = () => {
     setIntakeForm({
-      university_id: selectedUniversity || '', major_id: selectedMajor || '',
+      university_id: selectedUniversity || '', major_id: '',
       intake_term: 'September', intake_year: new Date().getFullYear(),
       application_deadline: '', documents_required: '', tuition_per_semester: '', tuition_per_year: '',
       application_fee: '', accommodation_fee: '', service_fee: '', medical_insurance_fee: '',
       teaching_language: 'English', duration_years: '', degree_type: '',
       arrival_medical_checkup_fee: '', admission_process: '', accommodation_note: '', visa_extension_fee: '',
-      notes: '', scholarship_info: ''
+      notes: '', scholarship_info: '',
+      // ========== NEW FIELDS ==========
+      program_start_date: '', deadline_type: '', scholarship_available: '',
+      age_min: '', age_max: '', min_average_score: '',
+      interview_required: false, written_test_required: false, acceptance_letter_required: false,
+      inside_china_applicants_allowed: false, inside_china_extra_requirements: '',
+      bank_statement_required: false, bank_statement_amount: '', bank_statement_currency: 'USD', bank_statement_note: '',
+      hsk_required: false, hsk_level: '', hsk_min_score: '',
+      english_test_required: false, english_test_note: '',
+      currency: 'CNY', accommodation_fee_period: '', medical_insurance_fee_period: '', arrival_medical_checkup_is_one_time: true
     })
   }
   
   const startEditIntake = (intake) => {
     setEditingIntake(intake)
     const deadline = intake.application_deadline ? new Date(intake.application_deadline).toISOString().slice(0, 16) : ''
+    const startDate = intake.program_start_date ? new Date(intake.program_start_date).toISOString().slice(0, 10) : ''
     setIntakeForm({
       university_id: intake.university_id || '',
       major_id: intake.major_id || '',
@@ -767,9 +1089,564 @@ export default function AdminDashboard() {
       accommodation_note: intake.accommodation_note || '',
       visa_extension_fee: intake.visa_extension_fee || '',
       notes: intake.notes || '',
-      scholarship_info: intake.scholarship_info || ''
+      scholarship_info: intake.scholarship_info || '',
+      // ========== NEW FIELDS ==========
+      program_start_date: startDate,
+      deadline_type: intake.deadline_type || '',
+      scholarship_available: intake.scholarship_available !== undefined ? intake.scholarship_available : '',
+      age_min: intake.age_min || '',
+      age_max: intake.age_max || '',
+      min_average_score: intake.min_average_score || '',
+      interview_required: intake.interview_required || false,
+      written_test_required: intake.written_test_required || false,
+      acceptance_letter_required: intake.acceptance_letter_required || false,
+      inside_china_applicants_allowed: intake.inside_china_applicants_allowed || false,
+      inside_china_extra_requirements: intake.inside_china_extra_requirements || '',
+      bank_statement_required: intake.bank_statement_required || false,
+      bank_statement_amount: intake.bank_statement_amount || '',
+      bank_statement_currency: intake.bank_statement_currency || 'USD',
+      bank_statement_note: intake.bank_statement_note || '',
+      hsk_required: intake.hsk_required || false,
+      hsk_level: intake.hsk_level || '',
+      hsk_min_score: intake.hsk_min_score || '',
+      english_test_required: intake.english_test_required || false,
+      english_test_note: intake.english_test_note || '',
+      currency: intake.currency || 'CNY',
+      accommodation_fee_period: intake.accommodation_fee_period || '',
+      medical_insurance_fee_period: intake.medical_insurance_fee_period || '',
+      arrival_medical_checkup_is_one_time: intake.arrival_medical_checkup_is_one_time !== undefined ? intake.arrival_medical_checkup_is_one_time : true
     })
     setShowIntakeForm(true)
+    // Load documents, scholarships, and exam requirements for this intake
+    if (intake.id) {
+      loadProgramDocuments(intake.id)
+      loadProgramIntakeScholarships(intake.id)
+      loadProgramExamRequirements(intake.id)
+    }
+  }
+  
+  const toggleIntakeSection = (section) => {
+    setIntakeFormSections(prev => ({ ...prev, [section]: !prev[section] }))
+  }
+  
+  // ========== Program Documents Management ==========
+  const loadProgramDocuments = async (intakeId) => {
+    if (!intakeId) {
+      setProgramDocuments([])
+      return
+    }
+    try {
+      const response = await api.get(`/program-documents/program-intakes/${intakeId}/documents`)
+      setProgramDocuments(response.data || [])
+    } catch (error) {
+      console.error('Error loading program documents:', error)
+      setProgramDocuments([])
+    }
+  }
+  
+  const handleCreateDocument = async (intakeId) => {
+    if (!intakeId) {
+      alert('Program intake must be saved first before adding documents')
+      return
+    }
+    if (!documentForm.name.trim()) {
+      alert('Document name is required')
+      return
+    }
+    try {
+      await api.post('/program-documents', {
+        program_intake_id: intakeId,
+        name: documentForm.name.trim(),
+        is_required: documentForm.is_required,
+        rules: documentForm.rules.trim() || null,
+        applies_to: documentForm.applies_to.trim() || null
+      })
+      alert('Document added successfully!')
+      setDocumentForm({ name: '', is_required: true, rules: '', applies_to: '' })
+      loadProgramDocuments(intakeId)
+    } catch (error) {
+      console.error('Error creating document:', error)
+      alert('Failed to add document')
+    }
+  }
+  
+  const handleUpdateDocument = async (documentId, intakeId) => {
+    if (!documentForm.name.trim()) {
+      alert('Document name is required')
+      return
+    }
+    try {
+      await api.put(`/program-documents/${documentId}`, {
+        name: documentForm.name.trim(),
+        is_required: documentForm.is_required,
+        rules: documentForm.rules.trim() || null,
+        applies_to: documentForm.applies_to.trim() || null
+      })
+      alert('Document updated successfully!')
+      setEditingDocument(null)
+      setDocumentForm({ name: '', is_required: true, rules: '', applies_to: '' })
+      loadProgramDocuments(intakeId)
+    } catch (error) {
+      console.error('Error updating document:', error)
+      alert('Failed to update document')
+    }
+  }
+  
+  const handleDeleteDocument = async (documentId, intakeId) => {
+    if (!confirm('Are you sure you want to delete this document requirement?')) {
+      return
+    }
+    try {
+      await api.delete(`/program-documents/${documentId}`)
+      alert('Document deleted successfully!')
+      loadProgramDocuments(intakeId)
+    } catch (error) {
+      console.error('Error deleting document:', error)
+      alert('Failed to delete document')
+    }
+  }
+  
+  const startEditDocument = (document) => {
+    setEditingDocument(document)
+    setDocumentForm({
+      name: document.name || '',
+      is_required: document.is_required !== undefined ? document.is_required : true,
+      rules: document.rules || '',
+      applies_to: document.applies_to || ''
+    })
+  }
+  
+  const cancelEditDocument = () => {
+    setEditingDocument(null)
+    setDocumentForm({ name: '', is_required: true, rules: '', applies_to: '' })
+  }
+  
+  // ========== Scholarships Management ==========
+  const loadScholarships = async () => {
+    try {
+      const response = await api.get('/scholarships')
+      setScholarships(response.data || [])
+    } catch (error) {
+      console.error('Error loading scholarships:', error)
+      setScholarships([])
+    }
+  }
+  
+  const handleCreateScholarship = async () => {
+    if (!scholarshipForm.name.trim()) {
+      alert('Scholarship name is required')
+      return
+    }
+    try {
+      await api.post('/scholarships', {
+        name: scholarshipForm.name.trim(),
+        provider: scholarshipForm.provider.trim() || null,
+        notes: scholarshipForm.notes.trim() || null
+      })
+      alert('Scholarship created successfully!')
+      setScholarshipForm({ name: '', provider: '', notes: '' })
+      setShowScholarshipForm(false)
+      loadScholarships()
+    } catch (error) {
+      console.error('Error creating scholarship:', error)
+      alert('Failed to create scholarship')
+    }
+  }
+  
+  const handleUpdateScholarship = async () => {
+    if (!scholarshipForm.name.trim()) {
+      alert('Scholarship name is required')
+      return
+    }
+    try {
+      await api.put(`/scholarships/${editingScholarship.id}`, {
+        name: scholarshipForm.name.trim(),
+        provider: scholarshipForm.provider.trim() || null,
+        notes: scholarshipForm.notes.trim() || null
+      })
+      alert('Scholarship updated successfully!')
+      setEditingScholarship(null)
+      setScholarshipForm({ name: '', provider: '', notes: '' })
+      setShowScholarshipForm(false)
+      loadScholarships()
+    } catch (error) {
+      console.error('Error updating scholarship:', error)
+      alert('Failed to update scholarship')
+    }
+  }
+  
+  const handleDeleteScholarship = async (id) => {
+    if (!confirm('Are you sure you want to delete this scholarship?')) {
+      return
+    }
+    try {
+      await api.delete(`/scholarships/${id}`)
+      alert('Scholarship deleted successfully!')
+      loadScholarships()
+    } catch (error) {
+      console.error('Error deleting scholarship:', error)
+      alert('Failed to delete scholarship')
+    }
+  }
+  
+  const startEditScholarship = (scholarship) => {
+    setEditingScholarship(scholarship)
+    setScholarshipForm({
+      name: scholarship.name || '',
+      provider: scholarship.provider || '',
+      notes: scholarship.notes || ''
+    })
+    setShowScholarshipForm(true)
+  }
+  
+  const cancelEditScholarship = () => {
+    setEditingScholarship(null)
+    setScholarshipForm({ name: '', provider: '', notes: '' })
+    setShowScholarshipForm(false)
+  }
+  
+  // ========== Program Intake Scholarships Management ==========
+  const loadProgramIntakeScholarships = async (intakeId) => {
+    if (!intakeId) {
+      setProgramIntakeScholarships([])
+      return
+    }
+    try {
+      const response = await api.get(`/scholarships/program-intakes/${intakeId}/scholarships`)
+      setProgramIntakeScholarships(response.data || [])
+    } catch (error) {
+      console.error('Error loading program intake scholarships:', error)
+      setProgramIntakeScholarships([])
+    }
+  }
+  
+  const handleCreateProgramIntakeScholarship = async (intakeId) => {
+    if (!intakeId) {
+      alert('Program intake must be saved first before adding scholarships')
+      return
+    }
+    if (!programIntakeScholarshipForm.scholarship_id) {
+      alert('Please select a scholarship')
+      return
+    }
+    try {
+      await api.post('/scholarships/program-intakes/scholarships', {
+        program_intake_id: intakeId,
+        scholarship_id: parseInt(programIntakeScholarshipForm.scholarship_id),
+        covers_tuition: programIntakeScholarshipForm.covers_tuition || null,
+        covers_accommodation: programIntakeScholarshipForm.covers_accommodation || null,
+        covers_insurance: programIntakeScholarshipForm.covers_insurance || null,
+        tuition_waiver_percent: programIntakeScholarshipForm.tuition_waiver_percent ? parseInt(programIntakeScholarshipForm.tuition_waiver_percent) : null,
+        living_allowance_monthly: programIntakeScholarshipForm.living_allowance_monthly ? parseFloat(programIntakeScholarshipForm.living_allowance_monthly) : null,
+        living_allowance_yearly: programIntakeScholarshipForm.living_allowance_yearly ? parseFloat(programIntakeScholarshipForm.living_allowance_yearly) : null,
+        first_year_only: programIntakeScholarshipForm.first_year_only || null,
+        renewal_required: programIntakeScholarshipForm.renewal_required || null,
+        deadline: programIntakeScholarshipForm.deadline || null,
+        eligibility_note: programIntakeScholarshipForm.eligibility_note.trim() || null
+      })
+      alert('Scholarship added to program intake successfully!')
+      setProgramIntakeScholarshipForm({
+        scholarship_id: '', covers_tuition: false, covers_accommodation: false, covers_insurance: false,
+        tuition_waiver_percent: '', living_allowance_monthly: '', living_allowance_yearly: '',
+        first_year_only: false, renewal_required: false, deadline: '', eligibility_note: ''
+      })
+      loadProgramIntakeScholarships(intakeId)
+    } catch (error) {
+      console.error('Error creating program intake scholarship:', error)
+      alert('Failed to add scholarship')
+    }
+  }
+  
+  const handleUpdateProgramIntakeScholarship = async (pisId, intakeId) => {
+    try {
+      await api.put(`/scholarships/program-intakes/scholarships/${pisId}`, {
+        covers_tuition: programIntakeScholarshipForm.covers_tuition || null,
+        covers_accommodation: programIntakeScholarshipForm.covers_accommodation || null,
+        covers_insurance: programIntakeScholarshipForm.covers_insurance || null,
+        tuition_waiver_percent: programIntakeScholarshipForm.tuition_waiver_percent ? parseInt(programIntakeScholarshipForm.tuition_waiver_percent) : null,
+        living_allowance_monthly: programIntakeScholarshipForm.living_allowance_monthly ? parseFloat(programIntakeScholarshipForm.living_allowance_monthly) : null,
+        living_allowance_yearly: programIntakeScholarshipForm.living_allowance_yearly ? parseFloat(programIntakeScholarshipForm.living_allowance_yearly) : null,
+        first_year_only: programIntakeScholarshipForm.first_year_only || null,
+        renewal_required: programIntakeScholarshipForm.renewal_required || null,
+        deadline: programIntakeScholarshipForm.deadline || null,
+        eligibility_note: programIntakeScholarshipForm.eligibility_note.trim() || null
+      })
+      alert('Scholarship updated successfully!')
+      setEditingProgramIntakeScholarship(null)
+      setProgramIntakeScholarshipForm({
+        scholarship_id: '', covers_tuition: false, covers_accommodation: false, covers_insurance: false,
+        tuition_waiver_percent: '', living_allowance_monthly: '', living_allowance_yearly: '',
+        first_year_only: false, renewal_required: false, deadline: '', eligibility_note: ''
+      })
+      loadProgramIntakeScholarships(intakeId)
+    } catch (error) {
+      console.error('Error updating program intake scholarship:', error)
+      alert('Failed to update scholarship')
+    }
+  }
+  
+  const handleDeleteProgramIntakeScholarship = async (pisId, intakeId) => {
+    if (!confirm('Are you sure you want to remove this scholarship from the program intake?')) {
+      return
+    }
+    try {
+      await api.delete(`/scholarships/program-intakes/scholarships/${pisId}`)
+      alert('Scholarship removed successfully!')
+      loadProgramIntakeScholarships(intakeId)
+    } catch (error) {
+      console.error('Error deleting program intake scholarship:', error)
+      alert('Failed to remove scholarship')
+    }
+  }
+  
+  const startEditProgramIntakeScholarship = (pis) => {
+    setEditingProgramIntakeScholarship(pis)
+    setProgramIntakeScholarshipForm({
+      scholarship_id: pis.scholarship_id.toString(),
+      covers_tuition: pis.covers_tuition || false,
+      covers_accommodation: pis.covers_accommodation || false,
+      covers_insurance: pis.covers_insurance || false,
+      tuition_waiver_percent: pis.tuition_waiver_percent?.toString() || '',
+      living_allowance_monthly: pis.living_allowance_monthly?.toString() || '',
+      living_allowance_yearly: pis.living_allowance_yearly?.toString() || '',
+      first_year_only: pis.first_year_only || false,
+      renewal_required: pis.renewal_required || false,
+      deadline: pis.deadline ? pis.deadline.split('T')[0] : '',
+      eligibility_note: pis.eligibility_note || ''
+    })
+  }
+  
+  const cancelEditProgramIntakeScholarship = () => {
+    setEditingProgramIntakeScholarship(null)
+    setProgramIntakeScholarshipForm({
+      scholarship_id: '', covers_tuition: false, covers_accommodation: false, covers_insurance: false,
+      tuition_waiver_percent: '', living_allowance_monthly: '', living_allowance_yearly: '',
+      first_year_only: false, renewal_required: false, deadline: '', eligibility_note: ''
+    })
+  }
+  
+  // ========== Program Exam Requirements Management ==========
+  const loadProgramExamRequirements = async (intakeId) => {
+    if (!intakeId) {
+      setProgramExamRequirements([])
+      return
+    }
+    try {
+      const response = await api.get(`/program-exam-requirements/program-intakes/${intakeId}/exam-requirements`)
+      setProgramExamRequirements(response.data || [])
+    } catch (error) {
+      console.error('Error loading program exam requirements:', error)
+      setProgramExamRequirements([])
+    }
+  }
+  
+  const handleCreateExamRequirement = async (intakeId) => {
+    if (!intakeId) {
+      alert('Program intake must be saved first before adding exam requirements')
+      return
+    }
+    if (!examRequirementForm.exam_name.trim()) {
+      alert('Exam name is required')
+      return
+    }
+    try {
+      await api.post('/program-exam-requirements', {
+        program_intake_id: intakeId,
+        exam_name: examRequirementForm.exam_name.trim(),
+        required: examRequirementForm.required,
+        subjects: examRequirementForm.subjects.trim() || null,
+        min_level: examRequirementForm.min_level ? parseInt(examRequirementForm.min_level) : null,
+        min_score: examRequirementForm.min_score ? parseInt(examRequirementForm.min_score) : null,
+        exam_language: examRequirementForm.exam_language.trim() || null,
+        notes: examRequirementForm.notes.trim() || null
+      })
+      alert('Exam requirement added successfully!')
+      setExamRequirementForm({
+        exam_name: '', required: true, subjects: '', min_level: '', min_score: '', exam_language: '', notes: ''
+      })
+      loadProgramExamRequirements(intakeId)
+    } catch (error) {
+      console.error('Error creating exam requirement:', error)
+      alert('Failed to add exam requirement')
+    }
+  }
+  
+  const handleUpdateExamRequirement = async (examReqId, intakeId) => {
+    if (!examRequirementForm.exam_name.trim()) {
+      alert('Exam name is required')
+      return
+    }
+    try {
+      await api.put(`/program-exam-requirements/${examReqId}`, {
+        exam_name: examRequirementForm.exam_name.trim(),
+        required: examRequirementForm.required,
+        subjects: examRequirementForm.subjects.trim() || null,
+        min_level: examRequirementForm.min_level ? parseInt(examRequirementForm.min_level) : null,
+        min_score: examRequirementForm.min_score ? parseInt(examRequirementForm.min_score) : null,
+        exam_language: examRequirementForm.exam_language.trim() || null,
+        notes: examRequirementForm.notes.trim() || null
+      })
+      alert('Exam requirement updated successfully!')
+      setEditingExamRequirement(null)
+      setExamRequirementForm({
+        exam_name: '', required: true, subjects: '', min_level: '', min_score: '', exam_language: '', notes: ''
+      })
+      loadProgramExamRequirements(intakeId)
+    } catch (error) {
+      console.error('Error updating exam requirement:', error)
+      alert('Failed to update exam requirement')
+    }
+  }
+  
+  const handleDeleteExamRequirement = async (examReqId, intakeId) => {
+    if (!confirm('Are you sure you want to delete this exam requirement?')) {
+      return
+    }
+    try {
+      await api.delete(`/program-exam-requirements/${examReqId}`)
+      alert('Exam requirement deleted successfully!')
+      loadProgramExamRequirements(intakeId)
+    } catch (error) {
+      console.error('Error deleting exam requirement:', error)
+      alert('Failed to delete exam requirement')
+    }
+  }
+  
+  const startEditExamRequirement = (examReq) => {
+    setEditingExamRequirement(examReq)
+    setExamRequirementForm({
+      exam_name: examReq.exam_name || '',
+      required: examReq.required !== undefined ? examReq.required : true,
+      subjects: examReq.subjects || '',
+      min_level: examReq.min_level?.toString() || '',
+      min_score: examReq.min_score?.toString() || '',
+      exam_language: examReq.exam_language || '',
+      notes: examReq.notes || ''
+    })
+  }
+  
+  const cancelEditExamRequirement = () => {
+    setEditingExamRequirement(null)
+    setExamRequirementForm({
+      exam_name: '', required: true, subjects: '', min_level: '', min_score: '', exam_language: '', notes: ''
+    })
+  }
+  
+  // ========== Partners Management ==========
+  const loadPartners = async () => {
+    try {
+      const response = await api.get('/partners')
+      setPartners(response.data || [])
+    } catch (error) {
+      console.error('Error loading partners:', error)
+      setPartners([])
+    }
+  }
+  
+  const handleCreatePartner = async () => {
+    if (!partnerForm.name.trim() || !partnerForm.email.trim()) {
+      alert('Name and email are required')
+      return
+    }
+    if (!partnerForm.password.trim()) {
+      alert('Password is required')
+      return
+    }
+    try {
+      await api.post('/partners', {
+        name: partnerForm.name.trim(),
+        company_name: partnerForm.company_name.trim() || null,
+        phone1: partnerForm.phone1.trim() || null,
+        phone2: partnerForm.phone2.trim() || null,
+        email: partnerForm.email.trim(),
+        city: partnerForm.city.trim() || null,
+        country: partnerForm.country.trim() || null,
+        full_address: partnerForm.full_address.trim() || null,
+        website: partnerForm.website.trim() || null,
+        notes: partnerForm.notes.trim() || null,
+        password: partnerForm.password
+      })
+      alert('Partner created successfully!')
+      setShowPartnerForm(false)
+      resetPartnerForm()
+      loadPartners()
+    } catch (error) {
+      console.error('Error creating partner:', error)
+      alert(error.response?.data?.detail || 'Failed to create partner')
+    }
+  }
+  
+  const handleUpdatePartner = async () => {
+    if (!partnerForm.name.trim() || !partnerForm.email.trim()) {
+      alert('Name and email are required')
+      return
+    }
+    try {
+      const updateData = {
+        name: partnerForm.name.trim(),
+        company_name: partnerForm.company_name.trim() || null,
+        phone1: partnerForm.phone1.trim() || null,
+        phone2: partnerForm.phone2.trim() || null,
+        email: partnerForm.email.trim(),
+        city: partnerForm.city.trim() || null,
+        country: partnerForm.country.trim() || null,
+        full_address: partnerForm.full_address.trim() || null,
+        website: partnerForm.website.trim() || null,
+        notes: partnerForm.notes.trim() || null
+      }
+      // Only include password if it was changed
+      if (partnerForm.password.trim()) {
+        updateData.password = partnerForm.password
+      }
+      await api.put(`/partners/${editingPartner.id}`, updateData)
+      alert('Partner updated successfully!')
+      setShowPartnerForm(false)
+      setEditingPartner(null)
+      resetPartnerForm()
+      loadPartners()
+    } catch (error) {
+      console.error('Error updating partner:', error)
+      alert(error.response?.data?.detail || 'Failed to update partner')
+    }
+  }
+  
+  const handleDeletePartner = async (id) => {
+    if (!confirm('Are you sure you want to delete this partner? This will fail if the partner has associated students.')) {
+      return
+    }
+    try {
+      await api.delete(`/partners/${id}`)
+      alert('Partner deleted successfully!')
+      loadPartners()
+    } catch (error) {
+      console.error('Error deleting partner:', error)
+      alert(error.response?.data?.detail || 'Failed to delete partner')
+    }
+  }
+  
+  const resetPartnerForm = () => {
+    setPartnerForm({
+      name: '', company_name: '', phone1: '', phone2: '', email: '', city: '', country: '', 
+      full_address: '', website: '', notes: '', password: ''
+    })
+  }
+  
+  const startEditPartner = (partner) => {
+    setEditingPartner(partner)
+    setPartnerForm({
+      name: partner.name || '',
+      company_name: partner.company_name || '',
+      phone1: partner.phone1 || '',
+      phone2: partner.phone2 || '',
+      email: partner.email || '',
+      city: partner.city || '',
+      country: partner.country || '',
+      full_address: partner.full_address || '',
+      website: partner.website || '',
+      notes: partner.notes || '',
+      password: '' // Don't show password
+    })
+    setShowPartnerForm(true)
   }
   
   return (
@@ -897,6 +1774,54 @@ export default function AdminDashboard() {
               Program Intakes
             </button>
             <button
+              onClick={() => {
+                setActiveTab('program-documents')
+                if (activeTab !== 'program-documents') {
+                  loadProgramIntakes() // Load intakes for filter
+                }
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg ${
+                activeTab === 'program-documents'
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <FileText className="w-5 h-5" />
+              Program Documents
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('scholarships')
+                if (activeTab !== 'scholarships') {
+                  loadScholarships()
+                }
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg ${
+                activeTab === 'scholarships'
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <GraduationCap className="w-5 h-5" />
+              Scholarships
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('partners')
+                if (activeTab !== 'partners') {
+                  loadPartners()
+                }
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg ${
+                activeTab === 'partners'
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <Users className="w-5 h-5" />
+              Partners
+            </button>
+            <button
               onClick={() => setActiveTab('students')}
               className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg ${
                 activeTab === 'students'
@@ -987,6 +1912,17 @@ export default function AdminDashboard() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-semibold text-gray-900">Students</h2>
+                <button
+                  onClick={() => {
+                    resetStudentForm()
+                    setEditingStudent(null)
+                    setShowStudentModal(true)
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Student
+                </button>
               </div>
               
               {/* Search */}
@@ -994,7 +1930,7 @@ export default function AdminDashboard() {
                 <div className="flex gap-4">
                   <input
                     type="text"
-                    placeholder="Search by name, email, phone, or country..."
+                    placeholder="Search by name, email, phone, passport, or country..."
                     value={studentsSearch}
                     onChange={(e) => setStudentsSearch(e.target.value)}
                     className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1012,35 +1948,97 @@ export default function AdminDashboard() {
                     <table className="w-full">
                       <thead className="bg-gray-50">
                         <tr>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 w-12"></th>
                           <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">ID</th>
                           <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Name</th>
                           <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Email</th>
                           <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Phone</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Passport</th>
                           <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Country</th>
-                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Documents</th>
-                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Created</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Docs</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Apps</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
                         {students.length === 0 ? (
                           <tr>
-                            <td colSpan="7" className="px-4 py-8 text-center text-gray-500">
+                            <td colSpan="10" className="px-4 py-8 text-center text-gray-500">
                               No students found
                             </td>
                           </tr>
                         ) : (
                           students.map((student) => (
-                            <tr key={student.id} className="hover:bg-gray-50">
-                              <td className="px-4 py-3 text-sm text-gray-900">{student.id}</td>
-                              <td className="px-4 py-3 text-sm text-gray-900">{student.full_name || 'N/A'}</td>
-                              <td className="px-4 py-3 text-sm text-gray-600">{student.email || 'N/A'}</td>
-                              <td className="px-4 py-3 text-sm text-gray-600">{student.phone || 'N/A'}</td>
-                              <td className="px-4 py-3 text-sm text-gray-600">{student.country_of_citizenship || 'N/A'}</td>
-                              <td className="px-4 py-3 text-sm text-gray-600">{student.document_count || 0}</td>
-                              <td className="px-4 py-3 text-sm text-gray-600">
-                                {student.created_at ? new Date(student.created_at).toLocaleDateString() : 'N/A'}
-                              </td>
-                            </tr>
+                            <React.Fragment key={student.id}>
+                              <tr className="hover:bg-gray-50">
+                                <td className="px-4 py-3">
+                                  <button
+                                    onClick={() => toggleStudentExpansion(student.id)}
+                                    className="text-gray-600 hover:text-gray-900"
+                                  >
+                                    {expandedStudents.has(student.id) ? '−' : '+'}
+                                  </button>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-900">{student.id}</td>
+                                <td className="px-4 py-3 text-sm text-gray-900">{student.full_name || 'N/A'}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600">{student.email || 'N/A'}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600">{student.phone || 'N/A'}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600">{student.passport_number || 'N/A'}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600">{student.country_of_citizenship || 'N/A'}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600">{student.document_count || 0}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600">{student.application_count || 0}</td>
+                                <td className="px-4 py-3 text-sm">
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => window.open(`/dashboard?admin_view=true&student_id=${student.id}`, '_blank')}
+                                      className="text-blue-600 hover:text-blue-800"
+                                      title="View Student Dashboard"
+                                    >
+                                      <UserIcon className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => startEditStudent(student)}
+                                      className="text-green-600 hover:text-green-800"
+                                      title="Edit Student"
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                              {expandedStudents.has(student.id) && (
+                                <tr>
+                                  <td colSpan="10" className="px-4 py-4 bg-gray-50">
+                                    <div className="space-y-2">
+                                      <h4 className="font-semibold text-gray-900 mb-2">Applications ({studentApplications[student.id]?.length || 0})</h4>
+                                      {studentApplications[student.id] && studentApplications[student.id].length > 0 ? (
+                                        <div className="space-y-2">
+                                          {studentApplications[student.id].map((app) => (
+                                            <div key={app.id} className="bg-white rounded border border-gray-200 p-3">
+                                              <div className="flex justify-between items-start">
+                                                <div>
+                                                  <p className="font-medium text-gray-900">{app.university_name} - {app.major_name}</p>
+                                                  <p className="text-sm text-gray-600">{app.intake_term} {app.intake_year}</p>
+                                                  <p className="text-sm text-gray-500">Status: {app.status}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                  <p className="text-sm text-gray-600">Fee: {app.application_fee || 0} RMB</p>
+                                                  {app.application_fee_paid && (
+                                                    <span className="text-xs text-green-600">✓ Paid</span>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="text-sm text-gray-500">No applications found</p>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
                           ))
                         )}
                       </tbody>
@@ -1055,7 +2053,7 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => loadStudents(studentsPage - 1, studentsSearch)}
+                          onClick={() => loadStudents(studentsPage - 1, studentsSearchDebounced)}
                           disabled={studentsPage === 1 || loadingStates.students}
                           className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -1065,7 +2063,7 @@ export default function AdminDashboard() {
                           Page {studentsPage} of {Math.ceil(studentsTotal / studentsPageSize)}
                         </span>
                         <button
-                          onClick={() => loadStudents(studentsPage + 1, studentsSearch)}
+                          onClick={() => loadStudents(studentsPage + 1, studentsSearchDebounced)}
                           disabled={studentsPage >= Math.ceil(studentsTotal / studentsPageSize) || loadingStates.students}
                           className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -1076,6 +2074,110 @@ export default function AdminDashboard() {
                   )}
                 </>
               )}
+              
+              {/* Create/Edit Student Modal */}
+              {showStudentModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                    <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        {editingStudent ? 'Edit' : 'Create'} Student
+                      </h3>
+                      <button
+                        onClick={() => {
+                          setShowStudentModal(false)
+                          setEditingStudent(null)
+                          resetStudentForm()
+                        }}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    
+                    <div className="p-6 space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                        <input
+                          type="email"
+                          value={studentForm.email}
+                          onChange={(e) => setStudentForm({...studentForm, email: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                          required
+                        />
+                      </div>
+                      {!editingStudent && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Password (Optional - will generate random if not provided)</label>
+                          <input
+                            type="password"
+                            value={studentForm.password}
+                            onChange={(e) => setStudentForm({...studentForm, password: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                            placeholder="Leave empty to generate random password"
+                          />
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                        <input
+                          type="text"
+                          value={studentForm.full_name}
+                          onChange={(e) => setStudentForm({...studentForm, full_name: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                        <input
+                          type="tel"
+                          value={studentForm.phone}
+                          onChange={(e) => setStudentForm({...studentForm, phone: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Passport Number</label>
+                        <input
+                          type="text"
+                          value={studentForm.passport_number}
+                          onChange={(e) => setStudentForm({...studentForm, passport_number: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Country of Citizenship</label>
+                        <input
+                          type="text"
+                          value={studentForm.country_of_citizenship}
+                          onChange={(e) => setStudentForm({...studentForm, country_of_citizenship: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                        />
+                      </div>
+                      
+                      <div className="flex gap-3 pt-4">
+                        <button
+                          onClick={editingStudent ? handleUpdateStudent : handleCreateStudent}
+                          className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                        >
+                          {editingStudent ? 'Update' : 'Create'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowStudentModal(false)
+                            setEditingStudent(null)
+                            resetStudentForm()
+                          }}
+                          className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
             </div>
           )}
           
@@ -1614,6 +2716,10 @@ export default function AdminDashboard() {
                       <input type="text" value={universityForm.name} onChange={(e) => setUniversityForm({...universityForm, name: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" required />
                     </div>
                     <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Name (Chinese)</label>
+                      <input type="text" value={universityForm.name_cn} onChange={(e) => setUniversityForm({...universityForm, name_cn: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="中文名称" />
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
                       <input type="text" value={universityForm.city} onChange={(e) => setUniversityForm({...universityForm, city: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
                     </div>
@@ -1644,6 +2750,40 @@ export default function AdminDashboard() {
                       <p className="text-xs text-gray-500 mt-1">Optional: Enter the university's ranking (lower number = higher rank)</p>
                     </div>
                     <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">World Ranking Band</label>
+                      <input 
+                        type="text" 
+                        value={universityForm.world_ranking_band || ''} 
+                        onChange={(e) => setUniversityForm({...universityForm, world_ranking_band: e.target.value})} 
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2" 
+                        placeholder="e.g., Top 100, Top 200, etc."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">National Ranking</label>
+                      <input 
+                        type="number" 
+                        value={universityForm.national_ranking || ''} 
+                        onChange={(e) => setUniversityForm({...universityForm, national_ranking: e.target.value ? parseInt(e.target.value) : ''})} 
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2" 
+                        placeholder="e.g., 1, 2, 3..."
+                        min="1"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Default Currency</label>
+                      <select 
+                        value={universityForm.default_currency} 
+                        onChange={(e) => setUniversityForm({...universityForm, default_currency: e.target.value})} 
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      >
+                        <option value="CNY">CNY (Chinese Yuan)</option>
+                        <option value="USD">USD (US Dollar)</option>
+                        <option value="EUR">EUR (Euro)</option>
+                        <option value="GBP">GBP (British Pound)</option>
+                      </select>
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Logo URL</label>
                       <input type="url" value={universityForm.logo_url} onChange={(e) => setUniversityForm({...universityForm, logo_url: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
                     </div>
@@ -1660,8 +2800,40 @@ export default function AdminDashboard() {
                       <input type="text" value={universityForm.contact_wechat} onChange={(e) => setUniversityForm({...universityForm, contact_wechat: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
                     </div>
                     <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Aliases</label>
+                      <input 
+                        type="text" 
+                        value={universityForm.aliases} 
+                        onChange={(e) => setUniversityForm({...universityForm, aliases: e.target.value})} 
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2" 
+                        placeholder="Comma-separated aliases (e.g., PKU, Peking University)"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Enter alternative names separated by commas</p>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Project Tags</label>
+                      <input 
+                        type="text" 
+                        value={universityForm.project_tags} 
+                        onChange={(e) => setUniversityForm({...universityForm, project_tags: e.target.value})} 
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2" 
+                        placeholder="Comma-separated tags (e.g., 985, 211, C9, Double First Class)"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Enter project tags separated by commas</p>
+                    </div>
+                    <div className="col-span-2">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                       <textarea value={universityForm.description} onChange={(e) => setUniversityForm({...universityForm, description: e.target.value})} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                    </div>
+                    <div className="col-span-2 flex gap-6">
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" checked={universityForm.is_partner} onChange={(e) => setUniversityForm({...universityForm, is_partner: e.target.checked})} />
+                        <span className="text-sm font-medium text-gray-700">Partner University</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" checked={universityForm.is_active} onChange={(e) => setUniversityForm({...universityForm, is_active: e.target.checked})} />
+                        <span className="text-sm font-medium text-gray-700">Active</span>
+                      </label>
                     </div>
                     <div className="col-span-2 flex gap-2">
                       <button onClick={editingUniversity ? handleUpdateUniversity : handleCreateUniversity} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
@@ -1712,144 +2884,15 @@ export default function AdminDashboard() {
           )}
           
           {activeTab === 'majors' && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold text-gray-900">Majors</h2>
-              </div>
-              {loadingStates.majors ? (
-                <div className="flex items-center justify-center py-12 bg-white rounded-lg border border-gray-200">
-                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                </div>
-              ) : (
-                <>
-                <button
-                  onClick={() => {
-                    resetMajorForm()
-                    setEditingMajor(null)
-                    setShowMajorForm(true)
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Major
-                </button>
-              
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Filter by University</label>
-                <select value={selectedUniversity || ''} onChange={(e) => setSelectedUniversity(e.target.value ? parseInt(e.target.value) : null)} className="w-full border border-gray-300 rounded-lg px-3 py-2">
-                  <option value="">All Universities</option>
-                  {universities.map((uni) => (
-                    <option key={uni.id} value={uni.id}>{uni.name}</option>
-                  ))}
-                </select>
-              </div>
-              
-              {showMajorForm && (
-                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold">{editingMajor ? 'Edit' : 'Add'} Major</h3>
-                    <button onClick={() => { setShowMajorForm(false); setEditingMajor(null); resetMajorForm() }} className="text-gray-500 hover:text-gray-700">
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">University *</label>
-                      <select value={majorForm.university_id} onChange={(e) => setMajorForm({...majorForm, university_id: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" required>
-                        <option value="">Select University</option>
-                        {universities.map((uni) => (
-                          <option key={uni.id} value={uni.id}>{uni.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                      <input type="text" value={majorForm.name} onChange={(e) => setMajorForm({...majorForm, name: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" required />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Degree Level *</label>
-                      <select value={majorForm.degree_level} onChange={(e) => setMajorForm({...majorForm, degree_level: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2">
-                        <option value="Language">Language</option>
-                        <option value="Bachelor">Bachelor</option>
-                        <option value="Master">Master</option>
-                        <option value="PhD">PhD</option>
-                        <option value="Short Program">Short Program</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Teaching Language *</label>
-                      <select value={majorForm.teaching_language} onChange={(e) => setMajorForm({...majorForm, teaching_language: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2">
-                        <option value="Chinese">Chinese</option>
-                        <option value="English">English</option>
-                        <option value="Bilingual">Bilingual</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Duration (Years)</label>
-                      <input type="number" step="0.5" value={majorForm.duration_years} onChange={(e) => setMajorForm({...majorForm, duration_years: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Discipline</label>
-                      <input type="text" value={majorForm.discipline} onChange={(e) => setMajorForm({...majorForm, discipline: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                      <textarea value={majorForm.description} onChange={(e) => setMajorForm({...majorForm, description: e.target.value})} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="flex items-center gap-2">
-                        <input type="checkbox" checked={majorForm.is_featured} onChange={(e) => setMajorForm({...majorForm, is_featured: e.target.checked})} />
-                        <span className="text-sm font-medium text-gray-700">Featured Major</span>
-                      </label>
-                    </div>
-                    <div className="col-span-2 flex gap-2">
-                      <button onClick={editingMajor ? handleUpdateMajor : handleCreateMajor} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                        {editingMajor ? 'Update' : 'Create'}
-                      </button>
-                      <button onClick={() => { setShowMajorForm(false); setEditingMajor(null); resetMajorForm() }} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Name</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">University</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Degree Level</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Language</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {majors.map((major) => (
-                      <tr key={major.id}>
-                        <td className="px-4 py-3 text-sm text-gray-900">{major.name}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{universities.find(u => u.id === major.university_id)?.name || 'N/A'}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{major.degree_level}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{major.teaching_language}</td>
-                        <td className="px-4 py-3 text-sm">
-                          <div className="flex gap-2">
-                            <button onClick={() => startEditMajor(major)} className="text-blue-600 hover:text-blue-800">
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => handleDeleteMajor(major.id)} className="text-red-600 hover:text-red-800">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-                </>
-              )}
-            </div>
+            <MajorsTable 
+              universities={universities} 
+              onUpdate={() => {
+                loadMajors(selectedUniversity)
+                if (activeTab === 'intakes') {
+                  loadProgramIntakes()
+                }
+              }}
+            />
           )}
           
           {activeTab === 'intakes' && (
@@ -1868,6 +2911,9 @@ export default function AdminDashboard() {
                       onClick={() => {
                         resetIntakeForm()
                         setEditingIntake(null)
+                        setProgramDocuments([])
+                        setDocumentForm({ name: '', is_required: true, rules: '', applies_to: '' })
+                        setEditingDocument(null)
                         setShowIntakeForm(true)
                       }}
                       className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -1882,7 +2928,6 @@ export default function AdminDashboard() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Filter by University</label>
                   <select value={selectedUniversity || ''} onChange={(e) => {
                     setSelectedUniversity(e.target.value ? parseInt(e.target.value) : null)
-                    setSelectedMajor(null)
                   }} className="w-full border border-gray-300 rounded-lg px-3 py-2">
                     <option value="">All Universities</option>
                     {universities.map((uni) => (
@@ -1890,195 +2935,1016 @@ export default function AdminDashboard() {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Major</label>
-                  <select value={selectedMajor || ''} onChange={(e) => setSelectedMajor(e.target.value ? parseInt(e.target.value) : null)} className="w-full border border-gray-300 rounded-lg px-3 py-2" disabled={!selectedUniversity}>
-                    <option value="">All Majors</option>
-                    {majors.filter(m => !selectedUniversity || m.university_id === selectedUniversity).map((major) => (
-                      <option key={major.id} value={major.id}>{major.name}</option>
-                    ))}
-                  </select>
-                </div>
               </div>
               
               {showIntakeForm && (
-                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <div className="flex justify-between items-center mb-4">
+                <div className="bg-white rounded-lg border border-gray-200 p-6 max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between items-center mb-4 sticky top-0 bg-white pb-2 border-b z-10">
                     <h3 className="text-lg font-semibold">{editingIntake ? 'Edit' : 'Add'} Program Intake</h3>
                     <button onClick={() => { setShowIntakeForm(false); setEditingIntake(null); resetIntakeForm() }} className="text-gray-500 hover:text-gray-700">
                       <X className="w-5 h-5" />
                     </button>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">University *</label>
-                      <select value={intakeForm.university_id} onChange={(e) => {
-                        setIntakeForm({...intakeForm, university_id: e.target.value, major_id: ''})
-                        setSelectedUniversity(parseInt(e.target.value))
-                      }} className="w-full border border-gray-300 rounded-lg px-3 py-2" required>
-                        <option value="">Select University</option>
-                        {universities.map((uni) => (
-                          <option key={uni.id} value={uni.id}>{uni.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Major *</label>
-                      <select value={intakeForm.major_id} onChange={(e) => setIntakeForm({...intakeForm, major_id: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" required disabled={!intakeForm.university_id}>
-                        <option value="">Select Major</option>
-                        {majors.filter(m => m.university_id === parseInt(intakeForm.university_id)).map((major) => (
-                          <option key={major.id} value={major.id}>{major.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Intake Term *</label>
-                      <select value={intakeForm.intake_term} onChange={(e) => setIntakeForm({...intakeForm, intake_term: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2">
-                        <option value="March">March</option>
-                        <option value="September">September</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Intake Year *</label>
-                      <input type="number" value={intakeForm.intake_year} onChange={(e) => setIntakeForm({...intakeForm, intake_year: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" required />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Application Deadline *</label>
-                      <input type="datetime-local" value={intakeForm.application_deadline} onChange={(e) => setIntakeForm({...intakeForm, application_deadline: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" required />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Tuition per Semester (RMB)</label>
-                      <input type="number" step="0.01" value={intakeForm.tuition_per_semester} onChange={(e) => setIntakeForm({...intakeForm, tuition_per_semester: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Tuition per Year (RMB)</label>
-                      <input type="number" step="0.01" value={intakeForm.tuition_per_year} onChange={(e) => setIntakeForm({...intakeForm, tuition_per_year: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Application Fee (RMB) - Non-refundable</label>
-                      <input type="number" step="0.01" value={intakeForm.application_fee} onChange={(e) => setIntakeForm({...intakeForm, application_fee: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g., 500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Accommodation Fee (RMB per year)</label>
-                      <input type="number" step="0.01" value={intakeForm.accommodation_fee} onChange={(e) => setIntakeForm({...intakeForm, accommodation_fee: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g., 3000" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Service Fee (RMB) - Only for successful application</label>
-                      <input type="number" step="0.01" value={intakeForm.service_fee} onChange={(e) => setIntakeForm({...intakeForm, service_fee: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g., 2000" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Medical Insurance Fee (RMB)</label>
-                      <input type="number" step="0.01" value={intakeForm.medical_insurance_fee} onChange={(e) => setIntakeForm({...intakeForm, medical_insurance_fee: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g., 1000" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Teaching Language *</label>
-                      <select value={intakeForm.teaching_language} onChange={(e) => setIntakeForm({...intakeForm, teaching_language: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2">
-                        <option value="English">English</option>
-                        <option value="Chinese">Chinese</option>
-                        <option value="Bilingual">Bilingual</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Duration of Course (Years)</label>
-                      <input type="number" step="0.5" value={intakeForm.duration_years} onChange={(e) => setIntakeForm({...intakeForm, duration_years: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g., 2.5" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Degree Type</label>
-                      <select value={intakeForm.degree_type} onChange={(e) => setIntakeForm({...intakeForm, degree_type: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2">
-                        <option value="">Select Degree Type</option>
-                        <option value="Non-degree">Non-degree</option>
-                        <option value="Associate Bachelor">Associate Bachelor</option>
-                        <option value="Masters">Masters</option>
-                        <option value="Doctoral (phd)">Doctoral (phd)</option>
-                        <option value="Study Tour Program">Study Tour Program</option>
-                        <option value="Upgrade from Junior College Student to University Student">Upgrade from Junior College Student to University Student</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Arrival Medical Checkup Fee (RMB) - One-time</label>
-                      <input type="number" step="0.01" value={intakeForm.arrival_medical_checkup_fee} onChange={(e) => setIntakeForm({...intakeForm, arrival_medical_checkup_fee: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g., 500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Visa Extension Fee (RMB) - Required each year</label>
-                      <input type="number" step="0.01" value={intakeForm.visa_extension_fee} onChange={(e) => setIntakeForm({...intakeForm, visa_extension_fee: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g., 400" />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Admission Process</label>
-                      <textarea value={intakeForm.admission_process} onChange={(e) => setIntakeForm({...intakeForm, admission_process: e.target.value})} rows={2} placeholder="Describe the admission process" className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Accommodation Note</label>
-                      <textarea value={intakeForm.accommodation_note} onChange={(e) => setIntakeForm({...intakeForm, accommodation_note: e.target.value})} rows={2} placeholder="Notes about accommodation options" className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Requirments (comma-separated) *</label>
-                      <textarea value={intakeForm.documents_required} onChange={(e) => setIntakeForm({...intakeForm, documents_required: e.target.value})} rows={2} placeholder="e.g., passport, photo, diploma, transcript, bank statement" className="w-full border border-gray-300 rounded-lg px-3 py-2" required />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                      <textarea value={intakeForm.notes} onChange={(e) => setIntakeForm({...intakeForm, notes: e.target.value})} rows={2} placeholder="e.g., Age 18-30, Online interview required" className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Scholarship Information</label>
-                      <textarea value={intakeForm.scholarship_info} onChange={(e) => setIntakeForm({...intakeForm, scholarship_info: e.target.value})} rows={2} placeholder="Available scholarships for this program/intake" className="w-full border border-gray-300 rounded-lg px-3 py-2" />
-                    </div>
-                    <div className="col-span-2 flex gap-2">
-                      <button onClick={editingIntake ? handleUpdateIntake : handleCreateIntake} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                        {editingIntake ? 'Update' : 'Create'}
-                      </button>
-                      <button onClick={() => { setShowIntakeForm(false); setEditingIntake(null); resetIntakeForm() }} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
-                        Cancel
-                      </button>
-                    </div>
+                  
+                  {/* ========== SECTION 1: Basic Information ========== */}
+                  <div className="mb-4 border rounded-lg">
+                    <button 
+                      onClick={() => toggleIntakeSection('basic')}
+                      className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <h4 className="font-semibold text-gray-900">1. Basic Information</h4>
+                      {intakeFormSections.basic ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {intakeFormSections.basic && (
+                      <div className="p-4 grid grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">University *</label>
+                          <select value={intakeForm.university_id} onChange={(e) => {
+                            setIntakeForm({...intakeForm, university_id: e.target.value, major_id: ''})
+                            setSelectedUniversity(parseInt(e.target.value))
+                          }} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" required>
+                            <option value="">Select University</option>
+                            {universities.map((uni) => (
+                              <option key={uni.id} value={uni.id}>{uni.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Major *</label>
+                          <select value={intakeForm.major_id} onChange={(e) => setIntakeForm({...intakeForm, major_id: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" required disabled={!intakeForm.university_id}>
+                            <option value="">Select Major</option>
+                            {majors.filter(m => m.university_id === parseInt(intakeForm.university_id)).map((major) => (
+                              <option key={major.id} value={major.id}>{major.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Intake Term *</label>
+                          <select value={intakeForm.intake_term} onChange={(e) => setIntakeForm({...intakeForm, intake_term: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <option value="March">March</option>
+                            <option value="September">September</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Intake Year *</label>
+                          <input type="number" value={intakeForm.intake_year} onChange={(e) => setIntakeForm({...intakeForm, intake_year: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" required />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Application Deadline *</label>
+                          <input type="datetime-local" value={intakeForm.application_deadline} onChange={(e) => setIntakeForm({...intakeForm, application_deadline: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" required />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Program Start Date</label>
+                          <input type="date" value={intakeForm.program_start_date} onChange={(e) => setIntakeForm({...intakeForm, program_start_date: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Deadline Type</label>
+                          <select value={intakeForm.deadline_type} onChange={(e) => setIntakeForm({...intakeForm, deadline_type: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <option value="">Select Type</option>
+                            <option value="University Deadline">University Deadline</option>
+                            <option value="CSC Deadline">CSC Deadline</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== SECTION 2: Degree & Program Details ========== */}
+                  <div className="mb-4 border rounded-lg">
+                    <button 
+                      onClick={() => toggleIntakeSection('degree')}
+                      className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <h4 className="font-semibold text-gray-900">2. Degree & Program Details</h4>
+                      {intakeFormSections.degree ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {intakeFormSections.degree && (
+                      <div className="p-4 grid grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Teaching Language *</label>
+                          <select value={intakeForm.teaching_language} onChange={(e) => setIntakeForm({...intakeForm, teaching_language: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <option value="English">English</option>
+                            <option value="Chinese">Chinese</option>
+                            <option value="Bilingual">Bilingual</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Duration (Years)</label>
+                          <input type="number" step="0.5" value={intakeForm.duration_years} onChange={(e) => setIntakeForm({...intakeForm, duration_years: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 2.5" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Degree Type</label>
+                          <select value={intakeForm.degree_type} onChange={(e) => setIntakeForm({...intakeForm, degree_type: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <option value="">Select Degree Type</option>
+                            <option value="Junior high">Junior high</option>
+                            <option value="Senior high">Senior high</option>
+                            <option value="Non Degree">Non Degree</option>
+                            <option value="Associate">Associate</option>
+                            <option value="Vocational College">Vocational College</option>
+                            <option value="Bachelor">Bachelor</option>
+                            <option value="Master">Master</option>
+                            <option value="Phd">Phd</option>
+                          </select>
+                        </div>
+                        <div className="col-span-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Admission Process</label>
+                          <textarea value={intakeForm.admission_process} onChange={(e) => setIntakeForm({...intakeForm, admission_process: e.target.value})} rows={2} placeholder="Describe the admission process" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== SECTION 3: Fees ========== */}
+                  <div className="mb-4 border rounded-lg">
+                    <button 
+                      onClick={() => toggleIntakeSection('fees')}
+                      className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <h4 className="font-semibold text-gray-900">3. Fees</h4>
+                      {intakeFormSections.fees ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {intakeFormSections.fees && (
+                      <div className="p-4 grid grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+                          <select value={intakeForm.currency} onChange={(e) => setIntakeForm({...intakeForm, currency: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <option value="CNY">CNY</option>
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="GBP">GBP</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Tuition per Semester</label>
+                          <input type="number" step="0.01" value={intakeForm.tuition_per_semester} onChange={(e) => setIntakeForm({...intakeForm, tuition_per_semester: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Tuition per Year</label>
+                          <input type="number" step="0.01" value={intakeForm.tuition_per_year} onChange={(e) => setIntakeForm({...intakeForm, tuition_per_year: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Application Fee (Non-refundable)</label>
+                          <input type="number" step="0.01" value={intakeForm.application_fee} onChange={(e) => setIntakeForm({...intakeForm, application_fee: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 500" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Accommodation Fee</label>
+                          <input type="number" step="0.01" value={intakeForm.accommodation_fee} onChange={(e) => setIntakeForm({...intakeForm, accommodation_fee: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 3000" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Accommodation Fee Period</label>
+                          <select value={intakeForm.accommodation_fee_period} onChange={(e) => setIntakeForm({...intakeForm, accommodation_fee_period: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <option value="">Select Period</option>
+                            <option value="month">Per Month</option>
+                            <option value="semester">Per Semester</option>
+                            <option value="year">Per Year</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Service Fee (MalishaEdu)</label>
+                          <input type="number" step="0.01" value={intakeForm.service_fee} onChange={(e) => setIntakeForm({...intakeForm, service_fee: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 2000" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Medical Insurance Fee</label>
+                          <input type="number" step="0.01" value={intakeForm.medical_insurance_fee} onChange={(e) => setIntakeForm({...intakeForm, medical_insurance_fee: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 1000" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Medical Insurance Fee Period</label>
+                          <select value={intakeForm.medical_insurance_fee_period} onChange={(e) => setIntakeForm({...intakeForm, medical_insurance_fee_period: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <option value="">Select Period</option>
+                            <option value="month">Per Month</option>
+                            <option value="semester">Per Semester</option>
+                            <option value="year">Per Year</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Arrival Medical Checkup Fee (One-time)</label>
+                          <input type="number" step="0.01" value={intakeForm.arrival_medical_checkup_fee} onChange={(e) => setIntakeForm({...intakeForm, arrival_medical_checkup_fee: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 500" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Visa Extension Fee (Annual)</label>
+                          <input type="number" step="0.01" value={intakeForm.visa_extension_fee} onChange={(e) => setIntakeForm({...intakeForm, visa_extension_fee: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 400" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input type="checkbox" checked={intakeForm.arrival_medical_checkup_is_one_time} onChange={(e) => setIntakeForm({...intakeForm, arrival_medical_checkup_is_one_time: e.target.checked})} className="w-4 h-4" />
+                          <label className="text-sm font-medium text-gray-700">Arrival Medical Checkup is One-time</label>
+                        </div>
+                        <div className="col-span-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Accommodation Note</label>
+                          <textarea value={intakeForm.accommodation_note} onChange={(e) => setIntakeForm({...intakeForm, accommodation_note: e.target.value})} rows={2} placeholder="Notes about accommodation options" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== SECTION 4: Requirements ========== */}
+                  <div className="mb-4 border rounded-lg">
+                    <button 
+                      onClick={() => toggleIntakeSection('requirements')}
+                      className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <h4 className="font-semibold text-gray-900">4. Requirements</h4>
+                      {intakeFormSections.requirements ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {intakeFormSections.requirements && (
+                      <div className="p-4 grid grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Age Minimum</label>
+                          <input type="number" value={intakeForm.age_min} onChange={(e) => setIntakeForm({...intakeForm, age_min: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Age Maximum</label>
+                          <input type="number" value={intakeForm.age_max} onChange={(e) => setIntakeForm({...intakeForm, age_max: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Min Average Score</label>
+                          <input type="number" step="0.01" value={intakeForm.min_average_score} onChange={(e) => setIntakeForm({...intakeForm, min_average_score: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input type="checkbox" checked={intakeForm.interview_required} onChange={(e) => setIntakeForm({...intakeForm, interview_required: e.target.checked})} className="w-4 h-4" />
+                          <label className="text-sm font-medium text-gray-700">Interview Required</label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input type="checkbox" checked={intakeForm.written_test_required} onChange={(e) => setIntakeForm({...intakeForm, written_test_required: e.target.checked})} className="w-4 h-4" />
+                          <label className="text-sm font-medium text-gray-700">Written Test Required</label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input type="checkbox" checked={intakeForm.acceptance_letter_required} onChange={(e) => setIntakeForm({...intakeForm, acceptance_letter_required: e.target.checked})} className="w-4 h-4" />
+                          <label className="text-sm font-medium text-gray-700">Acceptance Letter Required</label>
+                        </div>
+                        <div className="col-span-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Documents Required (comma-separated) *</label>
+                          <textarea value={intakeForm.documents_required} onChange={(e) => setIntakeForm({...intakeForm, documents_required: e.target.value})} rows={2} placeholder="e.g., passport, photo, diploma, transcript, bank statement" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" required />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== SECTION 5: Language Requirements ========== */}
+                  <div className="mb-4 border rounded-lg">
+                    <button 
+                      onClick={() => toggleIntakeSection('language')}
+                      className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <h4 className="font-semibold text-gray-900">5. Language Requirements</h4>
+                      {intakeFormSections.language ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {intakeFormSections.language && (
+                      <div className="p-4 grid grid-cols-3 gap-4">
+                        <div className="flex items-center gap-2">
+                          <input type="checkbox" checked={intakeForm.hsk_required} onChange={(e) => setIntakeForm({...intakeForm, hsk_required: e.target.checked})} className="w-4 h-4" />
+                          <label className="text-sm font-medium text-gray-700">HSK Required</label>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">HSK Level</label>
+                          <input type="number" value={intakeForm.hsk_level} onChange={(e) => setIntakeForm({...intakeForm, hsk_level: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 5" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">HSK Min Score</label>
+                          <input type="number" value={intakeForm.hsk_min_score} onChange={(e) => setIntakeForm({...intakeForm, hsk_min_score: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 180" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input type="checkbox" checked={intakeForm.english_test_required} onChange={(e) => setIntakeForm({...intakeForm, english_test_required: e.target.checked})} className="w-4 h-4" />
+                          <label className="text-sm font-medium text-gray-700">English Test Required</label>
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">English Test Note</label>
+                          <input type="text" value={intakeForm.english_test_note} onChange={(e) => setIntakeForm({...intakeForm, english_test_note: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., IELTS 6.0+, TOEFL 80+, PTE 58+" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== SECTION 6: Bank Statement Requirements ========== */}
+                  <div className="mb-4 border rounded-lg">
+                    <button 
+                      onClick={() => toggleIntakeSection('bankStatement')}
+                      className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <h4 className="font-semibold text-gray-900">6. Bank Statement Requirements</h4>
+                      {intakeFormSections.bankStatement ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {intakeFormSections.bankStatement && (
+                      <div className="p-4 grid grid-cols-3 gap-4">
+                        <div className="flex items-center gap-2">
+                          <input type="checkbox" checked={intakeForm.bank_statement_required} onChange={(e) => setIntakeForm({...intakeForm, bank_statement_required: e.target.checked})} className="w-4 h-4" />
+                          <label className="text-sm font-medium text-gray-700">Bank Statement Required</label>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Bank Statement Amount</label>
+                          <input type="number" step="0.01" value={intakeForm.bank_statement_amount} onChange={(e) => setIntakeForm({...intakeForm, bank_statement_amount: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 5000" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Bank Statement Currency</label>
+                          <select value={intakeForm.bank_statement_currency} onChange={(e) => setIntakeForm({...intakeForm, bank_statement_currency: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <option value="USD">USD</option>
+                            <option value="CNY">CNY</option>
+                            <option value="EUR">EUR</option>
+                            <option value="GBP">GBP</option>
+                          </select>
+                        </div>
+                        <div className="col-span-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Bank Statement Note</label>
+                          <input type="text" value={intakeForm.bank_statement_note} onChange={(e) => setIntakeForm({...intakeForm, bank_statement_note: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., ≥ $5000" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== SECTION 7: Inside China Applicants ========== */}
+                  <div className="mb-4 border rounded-lg">
+                    <button 
+                      onClick={() => toggleIntakeSection('insideChina')}
+                      className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <h4 className="font-semibold text-gray-900">7. Inside China Applicants</h4>
+                      {intakeFormSections.insideChina ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {intakeFormSections.insideChina && (
+                      <div className="p-4 grid grid-cols-3 gap-4">
+                        <div className="flex items-center gap-2">
+                          <input type="checkbox" checked={intakeForm.inside_china_applicants_allowed} onChange={(e) => setIntakeForm({...intakeForm, inside_china_applicants_allowed: e.target.checked})} className="w-4 h-4" />
+                          <label className="text-sm font-medium text-gray-700">Inside China Applicants Allowed</label>
+                        </div>
+                        <div className="col-span-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Inside China Extra Requirements</label>
+                          <textarea value={intakeForm.inside_china_extra_requirements} onChange={(e) => setIntakeForm({...intakeForm, inside_china_extra_requirements: e.target.value})} rows={2} placeholder="Extra requirements for applicants already in China" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== SECTION 8: Scholarship Information ========== */}
+                  <div className="mb-4 border rounded-lg">
+                    <button 
+                      onClick={() => toggleIntakeSection('scholarship')}
+                      className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <h4 className="font-semibold text-gray-900">8. Scholarship Information</h4>
+                      {intakeFormSections.scholarship ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {intakeFormSections.scholarship && (
+                      <div className="p-4 grid grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Scholarship Available</label>
+                          <select value={intakeForm.scholarship_available} onChange={(e) => setIntakeForm({...intakeForm, scholarship_available: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <option value="">Unknown</option>
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                          </select>
+                        </div>
+                        <div className="col-span-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Scholarship Information</label>
+                          <textarea value={intakeForm.scholarship_info} onChange={(e) => setIntakeForm({...intakeForm, scholarship_info: e.target.value})} rows={3} placeholder="Available scholarships for this program/intake" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== SECTION 9: Required Documents ========== */}
+                  <div className="mb-4 border rounded-lg">
+                    <button 
+                      onClick={() => {
+                        toggleIntakeSection('documents')
+                        // Load documents when section is opened
+                        if (editingIntake?.id && !intakeFormSections.documents) {
+                          loadProgramDocuments(editingIntake.id)
+                        } else if (!editingIntake && intakeForm.university_id && intakeForm.major_id && !intakeFormSections.documents) {
+                          // For new intake, documents will be added after creation
+                        }
+                      }}
+                      className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <h4 className="font-semibold text-gray-900">9. Required Documents</h4>
+                      {intakeFormSections.documents ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {intakeFormSections.documents && (
+                      <div className="p-4">
+                        {editingIntake?.id ? (
+                          <>
+                            {/* Document List */}
+                            <div className="mb-4">
+                              <h5 className="text-sm font-semibold text-gray-700 mb-2">Current Documents</h5>
+                              {programDocuments.length === 0 ? (
+                                <p className="text-sm text-gray-500 italic">No documents added yet</p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {programDocuments.map((doc) => (
+                                    <div key={doc.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium text-sm text-gray-900">{doc.name}</span>
+                                          {doc.is_required && (
+                                            <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded">Required</span>
+                                          )}
+                                          {!doc.is_required && (
+                                            <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded">Optional</span>
+                                          )}
+                                          {doc.applies_to && (
+                                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">{doc.applies_to}</span>
+                                          )}
+                                        </div>
+                                        {doc.rules && (
+                                          <p className="text-xs text-gray-600 mt-1">{doc.rules}</p>
+                                        )}
+                                      </div>
+                                      <div className="flex gap-2 ml-4">
+                                        <button onClick={() => startEditDocument(doc)} className="text-blue-600 hover:text-blue-800">
+                                          <Edit className="w-4 h-4" />
+                                        </button>
+                                        <button onClick={() => handleDeleteDocument(doc.id, editingIntake.id)} className="text-red-600 hover:text-red-800">
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Add/Edit Document Form */}
+                            <div className="border-t pt-4">
+                              <h5 className="text-sm font-semibold text-gray-700 mb-3">
+                                {editingDocument ? 'Edit Document' : 'Add New Document'}
+                              </h5>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Document Name *</label>
+                                  <input 
+                                    type="text" 
+                                    value={documentForm.name} 
+                                    onChange={(e) => setDocumentForm({...documentForm, name: e.target.value})} 
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" 
+                                    placeholder="e.g., Passport, Transcript, Study Plan"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Applies To</label>
+                                  <select 
+                                    value={documentForm.applies_to} 
+                                    onChange={(e) => setDocumentForm({...documentForm, applies_to: e.target.value})} 
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                  >
+                                    <option value="">All Applicants</option>
+                                    <option value="inside_china_only">Inside China Only</option>
+                                    <option value="outside_china_only">Outside China Only</option>
+                                    <option value="chinese_taught_only">Chinese Taught Only</option>
+                                    <option value="english_taught_only">English Taught Only</option>
+                                  </select>
+                                </div>
+                                <div className="col-span-2">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Rules/Requirements</label>
+                                  <input 
+                                    type="text" 
+                                    value={documentForm.rules} 
+                                    onChange={(e) => setDocumentForm({...documentForm, rules: e.target.value})} 
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" 
+                                    placeholder="e.g., Study plan 800+ words, Video 3–5 minutes, ≥ $5000 USD"
+                                  />
+                                </div>
+                                <div className="col-span-2 flex items-center gap-2">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={documentForm.is_required} 
+                                    onChange={(e) => setDocumentForm({...documentForm, is_required: e.target.checked})} 
+                                    className="w-4 h-4" 
+                                  />
+                                  <label className="text-sm font-medium text-gray-700">Required Document</label>
+                                </div>
+                                <div className="col-span-2 flex gap-2">
+                                  {editingDocument ? (
+                                    <>
+                                      <button 
+                                        onClick={() => handleUpdateDocument(editingDocument.id, editingIntake.id)} 
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                                      >
+                                        Update Document
+                                      </button>
+                                      <button 
+                                        onClick={cancelEditDocument} 
+                                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button 
+                                      onClick={() => handleCreateDocument(editingIntake.id)} 
+                                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                                    >
+                                      Add Document
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <div className="flex items-start gap-3">
+                              <div className="flex-shrink-0">
+                                <svg className="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                              <div>
+                                <h5 className="text-sm font-semibold text-yellow-800 mb-1">Documents Cannot Be Added Yet</h5>
+                                <p className="text-sm text-yellow-700">
+                                  Please save the program intake first before adding documents. Once the intake is created, you can edit it and add document requirements.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== SECTION 10: Program Intake Scholarships ========== */}
+                  <div className="mb-4 border rounded-lg">
+                    <button 
+                      onClick={() => {
+                        toggleIntakeSection('intakeScholarships')
+                        // Load scholarships when section is opened
+                        if (editingIntake?.id && !intakeFormSections.intakeScholarships) {
+                          loadProgramIntakeScholarships(editingIntake.id)
+                          loadScholarships() // Load available scholarships for dropdown
+                        } else if (!editingIntake && intakeForm.university_id && intakeForm.major_id && !intakeFormSections.intakeScholarships) {
+                          // For new intake, scholarships will be added after creation
+                          loadScholarships() // Load available scholarships for dropdown
+                        }
+                      }}
+                      className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <h4 className="font-semibold text-gray-900">10. Program Intake Scholarships</h4>
+                      {intakeFormSections.intakeScholarships ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {intakeFormSections.intakeScholarships && (
+                      <div className="p-4">
+                        {editingIntake?.id ? (
+                          <>
+                            {/* Scholarship List */}
+                            <div className="mb-4">
+                              <h5 className="text-sm font-semibold text-gray-700 mb-2">Current Scholarships</h5>
+                              {programIntakeScholarships.length === 0 ? (
+                                <p className="text-sm text-gray-500 italic">No scholarships added yet</p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {programIntakeScholarships.map((pis) => (
+                                    <div key={pis.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <span className="font-medium text-sm text-gray-900">{pis.scholarship_name}</span>
+                                          {pis.covers_tuition && <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">Tuition</span>}
+                                          {pis.covers_accommodation && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">Accommodation</span>}
+                                          {pis.covers_insurance && <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded">Insurance</span>}
+                                          {pis.first_year_only && <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded">First Year Only</span>}
+                                          {pis.renewal_required && <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded">Renewal Required</span>}
+                                        </div>
+                                        <div className="text-xs text-gray-600 space-y-1">
+                                          {pis.tuition_waiver_percent && <p>Tuition Waiver: {pis.tuition_waiver_percent}%</p>}
+                                          {pis.living_allowance_monthly && <p>Living Allowance: {pis.living_allowance_monthly}/month</p>}
+                                          {pis.living_allowance_yearly && <p>Living Allowance: {pis.living_allowance_yearly}/year</p>}
+                                          {pis.deadline && <p>Deadline: {new Date(pis.deadline).toLocaleDateString()}</p>}
+                                          {pis.eligibility_note && <p>Eligibility: {pis.eligibility_note}</p>}
+                                        </div>
+                                      </div>
+                                      <div className="flex gap-2 ml-4">
+                                        <button onClick={() => startEditProgramIntakeScholarship(pis)} className="text-blue-600 hover:text-blue-800">
+                                          <Edit className="w-4 h-4" />
+                                        </button>
+                                        <button onClick={() => handleDeleteProgramIntakeScholarship(pis.id, editingIntake.id)} className="text-red-600 hover:text-red-800">
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Add/Edit Scholarship Form */}
+                            <div className="border-t pt-4">
+                              <h5 className="text-sm font-semibold text-gray-700 mb-3">
+                                {editingProgramIntakeScholarship ? 'Edit Scholarship' : 'Add New Scholarship'}
+                              </h5>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="col-span-2">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Scholarship *</label>
+                                  <select 
+                                    value={programIntakeScholarshipForm.scholarship_id} 
+                                    onChange={(e) => setProgramIntakeScholarshipForm({...programIntakeScholarshipForm, scholarship_id: e.target.value})} 
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                    disabled={!!editingProgramIntakeScholarship}
+                                  >
+                                    <option value="">Select Scholarship</option>
+                                    {scholarships.map((sch) => (
+                                      <option key={sch.id} value={sch.id}>{sch.name} {sch.provider ? `(${sch.provider})` : ''}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="col-span-3 grid grid-cols-3 gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <input type="checkbox" checked={programIntakeScholarshipForm.covers_tuition} onChange={(e) => setProgramIntakeScholarshipForm({...programIntakeScholarshipForm, covers_tuition: e.target.checked})} className="w-4 h-4" />
+                                    <label className="text-sm font-medium text-gray-700">Covers Tuition</label>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <input type="checkbox" checked={programIntakeScholarshipForm.covers_accommodation} onChange={(e) => setProgramIntakeScholarshipForm({...programIntakeScholarshipForm, covers_accommodation: e.target.checked})} className="w-4 h-4" />
+                                    <label className="text-sm font-medium text-gray-700">Covers Accommodation</label>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <input type="checkbox" checked={programIntakeScholarshipForm.covers_insurance} onChange={(e) => setProgramIntakeScholarshipForm({...programIntakeScholarshipForm, covers_insurance: e.target.checked})} className="w-4 h-4" />
+                                    <label className="text-sm font-medium text-gray-700">Covers Insurance</label>
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Tuition Waiver %</label>
+                                  <input type="number" min="0" max="100" value={programIntakeScholarshipForm.tuition_waiver_percent} onChange={(e) => setProgramIntakeScholarshipForm({...programIntakeScholarshipForm, tuition_waiver_percent: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 50" />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Living Allowance (Monthly)</label>
+                                  <input type="number" step="0.01" value={programIntakeScholarshipForm.living_allowance_monthly} onChange={(e) => setProgramIntakeScholarshipForm({...programIntakeScholarshipForm, living_allowance_monthly: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 3500" />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Living Allowance (Yearly)</label>
+                                  <input type="number" step="0.01" value={programIntakeScholarshipForm.living_allowance_yearly} onChange={(e) => setProgramIntakeScholarshipForm({...programIntakeScholarshipForm, living_allowance_yearly: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="e.g., 36000" />
+                                </div>
+                                <div className="col-span-2 grid grid-cols-2 gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <input type="checkbox" checked={programIntakeScholarshipForm.first_year_only} onChange={(e) => setProgramIntakeScholarshipForm({...programIntakeScholarshipForm, first_year_only: e.target.checked})} className="w-4 h-4" />
+                                    <label className="text-sm font-medium text-gray-700">First Year Only</label>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <input type="checkbox" checked={programIntakeScholarshipForm.renewal_required} onChange={(e) => setProgramIntakeScholarshipForm({...programIntakeScholarshipForm, renewal_required: e.target.checked})} className="w-4 h-4" />
+                                    <label className="text-sm font-medium text-gray-700">Renewal Required</label>
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Scholarship Deadline</label>
+                                  <input type="date" value={programIntakeScholarshipForm.deadline} onChange={(e) => setProgramIntakeScholarshipForm({...programIntakeScholarshipForm, deadline: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                                </div>
+                                <div className="col-span-2">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Eligibility Note</label>
+                                  <textarea value={programIntakeScholarshipForm.eligibility_note} onChange={(e) => setProgramIntakeScholarshipForm({...programIntakeScholarshipForm, eligibility_note: e.target.value})} rows={2} placeholder="Eligibility requirements and notes" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                                </div>
+                                <div className="col-span-2 flex gap-2">
+                                  {editingProgramIntakeScholarship ? (
+                                    <>
+                                      <button 
+                                        onClick={() => handleUpdateProgramIntakeScholarship(editingProgramIntakeScholarship.id, editingIntake.id)} 
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                                      >
+                                        Update Scholarship
+                                      </button>
+                                      <button 
+                                        onClick={cancelEditProgramIntakeScholarship} 
+                                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button 
+                                      onClick={() => handleCreateProgramIntakeScholarship(editingIntake.id)} 
+                                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                                    >
+                                      Add Scholarship
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <div className="flex items-start gap-3">
+                              <div className="flex-shrink-0">
+                                <svg className="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                              <div>
+                                <h5 className="text-sm font-semibold text-yellow-800 mb-1">Scholarships Cannot Be Added Yet</h5>
+                                <p className="text-sm text-yellow-700">
+                                  Please save the program intake first before adding scholarships. Once the intake is created, you can edit it and add scholarship information.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== SECTION 11: Exam Requirements ========== */}
+                  <div className="mb-4 border rounded-lg">
+                    <button 
+                      onClick={() => {
+                        toggleIntakeSection('examRequirements')
+                        // Load exam requirements when section is opened
+                        if (editingIntake?.id && !intakeFormSections.examRequirements) {
+                          loadProgramExamRequirements(editingIntake.id)
+                        }
+                      }}
+                      className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <h4 className="font-semibold text-gray-900">11. Exam Requirements</h4>
+                      {intakeFormSections.examRequirements ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {intakeFormSections.examRequirements && (
+                      <div className="p-4">
+                        {editingIntake?.id ? (
+                          <>
+                            {/* Exam Requirements List */}
+                            <div className="mb-4">
+                              <h5 className="text-sm font-semibold text-gray-700 mb-2">Current Exam Requirements</h5>
+                              {programExamRequirements.length === 0 ? (
+                                <p className="text-sm text-gray-500 italic">No exam requirements added yet</p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {programExamRequirements.map((examReq) => (
+                                    <div key={examReq.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium text-sm text-gray-900">{examReq.exam_name}</span>
+                                          {examReq.required && (
+                                            <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded">Required</span>
+                                          )}
+                                          {!examReq.required && (
+                                            <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded">Optional</span>
+                                          )}
+                                          {examReq.exam_language && (
+                                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">{examReq.exam_language}</span>
+                                          )}
+                                        </div>
+                                        <div className="text-xs text-gray-600 mt-1 space-y-1">
+                                          {examReq.subjects && <p>Subjects: {examReq.subjects}</p>}
+                                          {examReq.min_level && <p>Min Level: {examReq.min_level}</p>}
+                                          {examReq.min_score && <p>Min Score: {examReq.min_score}</p>}
+                                          {examReq.notes && <p>Notes: {examReq.notes}</p>}
+                                        </div>
+                                      </div>
+                                      <div className="flex gap-2 ml-4">
+                                        <button onClick={() => startEditExamRequirement(examReq)} className="text-blue-600 hover:text-blue-800">
+                                          <Edit className="w-4 h-4" />
+                                        </button>
+                                        <button onClick={() => handleDeleteExamRequirement(examReq.id, editingIntake.id)} className="text-red-600 hover:text-red-800">
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Add/Edit Exam Requirement Form */}
+                            <div className="border-t pt-4">
+                              <h5 className="text-sm font-semibold text-gray-700 mb-3">
+                                {editingExamRequirement ? 'Edit Exam Requirement' : 'Add New Exam Requirement'}
+                              </h5>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Exam Name *</label>
+                                  {examRequirementForm.exam_name && !['HSK', 'HSKK', 'CSCA', 'IELTS', 'TOEFL', 'PTE', 'Duolingo'].includes(examRequirementForm.exam_name) ? (
+                                    <input 
+                                      type="text" 
+                                      value={examRequirementForm.exam_name} 
+                                      onChange={(e) => setExamRequirementForm({...examRequirementForm, exam_name: e.target.value})} 
+                                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" 
+                                      placeholder="Enter exam name"
+                                    />
+                                  ) : (
+                                    <select 
+                                      value={examRequirementForm.exam_name} 
+                                      onChange={(e) => {
+                                        const value = e.target.value
+                                        if (value === 'Other') {
+                                          setExamRequirementForm({...examRequirementForm, exam_name: ''})
+                                        } else {
+                                          setExamRequirementForm({...examRequirementForm, exam_name: value})
+                                        }
+                                      }} 
+                                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                    >
+                                      <option value="">Select Exam</option>
+                                      <option value="HSK">HSK</option>
+                                      <option value="HSKK">HSKK</option>
+                                      <option value="CSCA">CSCA</option>
+                                      <option value="IELTS">IELTS</option>
+                                      <option value="TOEFL">TOEFL</option>
+                                      <option value="PTE">PTE</option>
+                                      <option value="Duolingo">Duolingo</option>
+                                      <option value="Other">Other (Custom)</option>
+                                    </select>
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Exam Language</label>
+                                  <input 
+                                    type="text" 
+                                    value={examRequirementForm.exam_language} 
+                                    onChange={(e) => setExamRequirementForm({...examRequirementForm, exam_language: e.target.value})} 
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" 
+                                    placeholder="e.g., English version CSCA required"
+                                  />
+                                </div>
+                                <div className="col-span-2">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Subjects (for CSCA)</label>
+                                  <input 
+                                    type="text" 
+                                    value={examRequirementForm.subjects} 
+                                    onChange={(e) => setExamRequirementForm({...examRequirementForm, subjects: e.target.value})} 
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" 
+                                    placeholder="e.g., Math/Physics/Chemistry"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Min Level (for HSK)</label>
+                                  <input 
+                                    type="number" 
+                                    value={examRequirementForm.min_level} 
+                                    onChange={(e) => setExamRequirementForm({...examRequirementForm, min_level: e.target.value})} 
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" 
+                                    placeholder="e.g., 5"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Min Score</label>
+                                  <input 
+                                    type="number" 
+                                    value={examRequirementForm.min_score} 
+                                    onChange={(e) => setExamRequirementForm({...examRequirementForm, min_score: e.target.value})} 
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" 
+                                    placeholder="e.g., 180 (HSK), 6.5 (IELTS - use notes)"
+                                  />
+                                </div>
+                                <div className="col-span-2">
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                                  <textarea 
+                                    value={examRequirementForm.notes} 
+                                    onChange={(e) => setExamRequirementForm({...examRequirementForm, notes: e.target.value})} 
+                                    rows={2} 
+                                    placeholder="Additional notes about the exam requirement" 
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" 
+                                  />
+                                </div>
+                                <div className="col-span-2 flex items-center gap-2">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={examRequirementForm.required} 
+                                    onChange={(e) => setExamRequirementForm({...examRequirementForm, required: e.target.checked})} 
+                                    className="w-4 h-4" 
+                                  />
+                                  <label className="text-sm font-medium text-gray-700">Required Exam</label>
+                                </div>
+                                <div className="col-span-2 flex gap-2">
+                                  {editingExamRequirement ? (
+                                    <>
+                                      <button 
+                                        onClick={() => handleUpdateExamRequirement(editingExamRequirement.id, editingIntake.id)} 
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                                      >
+                                        Update Exam Requirement
+                                      </button>
+                                      <button 
+                                        onClick={cancelEditExamRequirement} 
+                                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button 
+                                      onClick={() => handleCreateExamRequirement(editingIntake.id)} 
+                                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                                    >
+                                      Add Exam Requirement
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <div className="flex items-start gap-3">
+                              <div className="flex-shrink-0">
+                                <svg className="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                              <div>
+                                <h5 className="text-sm font-semibold text-yellow-800 mb-1">Exam Requirements Cannot Be Added Yet</h5>
+                                <p className="text-sm text-yellow-700">
+                                  Please save the program intake first before adding exam requirements. Once the intake is created, you can edit it and add exam requirements.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ========== SECTION 12: Additional Notes ========== */}
+                  <div className="mb-4 border rounded-lg">
+                    <button 
+                      onClick={() => toggleIntakeSection('notes')}
+                      className="w-full flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <h4 className="font-semibold text-gray-900">12. Additional Notes</h4>
+                      {intakeFormSections.notes ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {intakeFormSections.notes && (
+                      <div className="p-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                          <textarea value={intakeForm.notes} onChange={(e) => setIntakeForm({...intakeForm, notes: e.target.value})} rows={3} placeholder="e.g., Age 18-30, Online interview required" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Submit Buttons */}
+                  <div className="flex gap-2 pt-4 border-t sticky bottom-0 bg-white">
+                    <button onClick={editingIntake ? handleUpdateIntake : handleCreateIntake} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+                      {editingIntake ? 'Update' : 'Create'} Program Intake
+                    </button>
+                    <button onClick={() => { setShowIntakeForm(false); setEditingIntake(null); resetIntakeForm() }} className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium">
+                      Cancel
+                    </button>
                   </div>
                 </div>
               )}
               
               {/* Search and Filters */}
               <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <div className="flex gap-4 items-center">
-                  <div className="flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                  <div className="lg:col-span-2">
                     <input
                       type="text"
                       value={intakeSearchTerm}
-                      onChange={(e) => {
-                        setIntakeSearchTerm(e.target.value)
-                        setIntakeCurrentPage(1) // Reset to first page on search
-                      }}
-                      placeholder="Search by university, major, intake term..."
+                      onChange={(e) => setIntakeSearchTerm(e.target.value)}
+                      placeholder="Search by notes, scholarship info, admission process..."
                       className="w-full border border-gray-300 rounded-lg px-3 py-2"
                     />
                   </div>
-                  <div className="flex gap-2">
-                    <select
-                      value={selectedUniversity || ''}
-                      onChange={(e) => {
-                        setSelectedUniversity(e.target.value ? parseInt(e.target.value) : null)
-                        setIntakeCurrentPage(1)
-                      }}
-                      className="border border-gray-300 rounded-lg px-3 py-2"
-                    >
-                      <option value="">All Universities</option>
-                      {universities.map(uni => (
-                        <option key={uni.id} value={uni.id}>{uni.name}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={selectedMajor || ''}
-                      onChange={(e) => {
-                        setSelectedMajor(e.target.value ? parseInt(e.target.value) : null)
-                        setIntakeCurrentPage(1)
-                      }}
-                      className="border border-gray-300 rounded-lg px-3 py-2"
-                      disabled={!selectedUniversity}
-                    >
-                      <option value="">All Majors</option>
-                      {majors.filter(m => !selectedUniversity || m.university_id === selectedUniversity).map(major => (
-                        <option key={major.id} value={major.id}>{major.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <select
+                    value={selectedUniversity || ''}
+                    onChange={(e) => {
+                      setSelectedUniversity(e.target.value ? parseInt(e.target.value) : null)
+                      setIntakeCurrentPage(1)
+                    }}
+                    className="border border-gray-300 rounded-lg px-3 py-2"
+                  >
+                    <option value="">All Universities</option>
+                    {universities.map(uni => (
+                      <option key={uni.id} value={uni.id}>{uni.name}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={selectedIntakeTerm || ''}
+                    onChange={(e) => {
+                      setSelectedIntakeTerm(e.target.value || null)
+                      setIntakeCurrentPage(1)
+                    }}
+                    className="border border-gray-300 rounded-lg px-3 py-2"
+                  >
+                    <option value="">All Intake Terms</option>
+                    <option value="March">March</option>
+                    <option value="September">September</option>
+                    <option value="Other">Other</option>
+                  </select>
+                  <select
+                    value={selectedIntakeYear || ''}
+                    onChange={(e) => {
+                      setSelectedIntakeYear(e.target.value ? parseInt(e.target.value) : null)
+                      setIntakeCurrentPage(1)
+                    }}
+                    className="border border-gray-300 rounded-lg px-3 py-2"
+                  >
+                    <option value="">All Years</option>
+                    {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() + i).map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mt-4">
+                  <select
+                    value={selectedTeachingLanguage || ''}
+                    onChange={(e) => {
+                      setSelectedTeachingLanguage(e.target.value || null)
+                      setIntakeCurrentPage(1)
+                    }}
+                    className="border border-gray-300 rounded-lg px-3 py-2"
+                  >
+                    <option value="">All Teaching Languages</option>
+                    <option value="English">English</option>
+                    <option value="Chinese">Chinese</option>
+                    <option value="Bilingual">Bilingual</option>
+                  </select>
                 </div>
               </div>
               
@@ -2090,6 +3956,7 @@ export default function AdminDashboard() {
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">University</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Major</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Intake</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Teaching Language</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Deadline</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Tuition/Year</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">App Fee</th>
@@ -2097,141 +3964,387 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {(() => {
-                      // Filter intakes based on search and selected filters
-                      let filteredIntakes = programIntakes
-                      
-                      if (intakeSearchTerm) {
-                        const searchLower = intakeSearchTerm.toLowerCase()
-                        filteredIntakes = filteredIntakes.filter(intake => {
-                          // Use university_name and major_name from response, fallback to lookup
-                          const uniName = intake.university_name || universities.find(u => u.id === intake.university_id)?.name || ''
-                          const majorName = intake.major_name || majors.find(m => m.id === intake.major_id)?.name || ''
-                          return (
-                            uniName.toLowerCase().includes(searchLower) ||
-                            majorName.toLowerCase().includes(searchLower) ||
-                            (intake.intake_term || '').toLowerCase().includes(searchLower) ||
-                            String(intake.intake_year || '').includes(searchLower)
-                          )
-                        })
-                      }
-                      
-                      if (selectedUniversity) {
-                        filteredIntakes = filteredIntakes.filter(intake => intake.university_id === selectedUniversity)
-                      }
-                      
-                      if (selectedMajor) {
-                        filteredIntakes = filteredIntakes.filter(intake => intake.major_id === selectedMajor)
-                      }
-                      
-                      // Pagination
-                      const totalPages = Math.ceil(filteredIntakes.length / intakePageSize)
-                      const startIndex = (intakeCurrentPage - 1) * intakePageSize
-                      const endIndex = startIndex + intakePageSize
-                      const paginatedIntakes = filteredIntakes.slice(startIndex, endIndex)
-                      
+                    {programIntakes.map((intake) => {
+                      const uni = intake.university_name || universities.find(u => u.id === intake.university_id)?.name
+                      const major = intake.major_name || majors.find(m => m.id === intake.major_id)?.name
+                      const deadline = intake.application_deadline ? new Date(intake.application_deadline) : null
                       return (
-                        <>
-                          {paginatedIntakes.map((intake) => {
-                            // Use university_name and major_name from response, fallback to lookup if not available
-                            const uni = intake.university_name || universities.find(u => u.id === intake.university_id)?.name
-                            const major = intake.major_name || majors.find(m => m.id === intake.major_id)?.name
-                            const deadline = intake.application_deadline ? new Date(intake.application_deadline) : null
-                            return (
-                              <tr key={intake.id}>
-                                <td className="px-4 py-3 text-sm text-gray-900">{uni || 'N/A'}</td>
-                                <td className="px-4 py-3 text-sm text-gray-600">{major || 'N/A'}</td>
-                                <td className="px-4 py-3 text-sm text-gray-600">{intake.intake_term} {intake.intake_year}</td>
-                                <td className="px-4 py-3 text-sm text-gray-600">{deadline ? deadline.toLocaleDateString() : 'N/A'}</td>
-                                <td className="px-4 py-3 text-sm text-gray-600">{intake.tuition_per_year ? `${intake.tuition_per_year} RMB` : 'N/A'}</td>
-                                <td className="px-4 py-3 text-sm text-gray-600">{intake.application_fee ? `${intake.application_fee} RMB` : '-'}</td>
-                                <td className="px-4 py-3 text-sm">
-                                  <div className="flex gap-2">
-                                    <button onClick={() => startEditIntake(intake)} className="text-blue-600 hover:text-blue-800">
-                                      <Edit className="w-4 h-4" />
-                                    </button>
-                                    <button onClick={() => handleDeleteIntake(intake.id)} className="text-red-600 hover:text-red-800">
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                          {paginatedIntakes.length === 0 && (
-                            <tr>
-                              <td colSpan="7" className="px-4 py-8 text-center text-gray-500">
-                                No program intakes found
-                              </td>
-                            </tr>
-                          )}
-                        </>
+                        <tr key={intake.id}>
+                          <td className="px-4 py-3 text-sm text-gray-900">{uni || 'N/A'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{major || 'N/A'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{intake.intake_term} {intake.intake_year}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{intake.teaching_language || 'N/A'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{deadline ? deadline.toLocaleDateString() : 'N/A'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{intake.tuition_per_year ? `${intake.tuition_per_year} RMB` : 'N/A'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{intake.application_fee ? `${intake.application_fee} RMB` : '-'}</td>
+                          <td className="px-4 py-3 text-sm">
+                            <div className="flex gap-2">
+                              <button onClick={() => startEditIntake(intake)} className="text-blue-600 hover:text-blue-800">
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeleteIntake(intake.id)} className="text-red-600 hover:text-red-800">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
                       )
-                    })()}
+                    })}
+                    {programIntakes.length === 0 && !loadingStates.intakes && (
+                      <tr>
+                        <td colSpan="8" className="px-4 py-8 text-center text-gray-500">
+                          No program intakes found
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
                 
                 {/* Pagination Controls */}
-                {(() => {
-                  let filteredIntakes = programIntakes
-                  
-                  if (intakeSearchTerm) {
-                    const searchLower = intakeSearchTerm.toLowerCase()
-                    filteredIntakes = filteredIntakes.filter(intake => {
-                      // Use university_name and major_name from response, fallback to lookup
-                      const uniName = intake.university_name || universities.find(u => u.id === intake.university_id)?.name || ''
-                      const majorName = intake.major_name || majors.find(m => m.id === intake.major_id)?.name || ''
-                      return (
-                        uniName.toLowerCase().includes(searchLower) ||
-                        majorName.toLowerCase().includes(searchLower) ||
-                        (intake.intake_term || '').toLowerCase().includes(searchLower) ||
-                        String(intake.intake_year || '').includes(searchLower)
-                      )
-                    })
-                  }
-                  
-                  if (selectedUniversity) {
-                    filteredIntakes = filteredIntakes.filter(intake => intake.university_id === selectedUniversity)
-                  }
-                  
-                  if (selectedMajor) {
-                    filteredIntakes = filteredIntakes.filter(intake => intake.major_id === selectedMajor)
-                  }
-                  
-                  const totalPages = Math.ceil(filteredIntakes.length / intakePageSize)
-                  
-                  if (totalPages <= 1) return null
-                  
-                  return (
-                    <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
-                      <div className="text-sm text-gray-700">
-                        Showing {(intakeCurrentPage - 1) * intakePageSize + 1} to {Math.min(intakeCurrentPage * intakePageSize, filteredIntakes.length)} of {filteredIntakes.length} results
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setIntakeCurrentPage(prev => Math.max(1, prev - 1))}
-                          disabled={intakeCurrentPage === 1}
-                          className="px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Previous
-                        </button>
-                        <span className="px-3 py-1 text-sm text-gray-700">
-                          Page {intakeCurrentPage} of {totalPages}
-                        </span>
-                        <button
-                          onClick={() => setIntakeCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                          disabled={intakeCurrentPage === totalPages}
-                          className="px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Next
-                        </button>
-                      </div>
+                {intakeTotalPages > 1 && (
+                  <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
+                    <div className="text-sm text-gray-700">
+                      Showing {(intakeCurrentPage - 1) * intakePageSize + 1} to {Math.min(intakeCurrentPage * intakePageSize, intakeTotal)} of {intakeTotal} results
                     </div>
-                  )
-                })()}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setIntakeCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={intakeCurrentPage === 1 || loadingStates.intakes}
+                        className="px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Previous
+                      </button>
+                      <span className="px-3 py-1 text-sm text-gray-700">
+                        Page {intakeCurrentPage} of {intakeTotalPages}
+                      </span>
+                      <button
+                        onClick={() => setIntakeCurrentPage(prev => Math.min(intakeTotalPages, prev + 1))}
+                        disabled={intakeCurrentPage === intakeTotalPages || loadingStates.intakes}
+                        className="px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
                 </>
               )}
+            </div>
+          )}
+          
+          {activeTab === 'program-documents' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-gray-900">Program Documents</h2>
+              </div>
+              
+              {/* Filters */}
+              <div className="bg-white rounded-lg border border-gray-200 p-4 grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Filter by University</label>
+                  <select 
+                    value={selectedUniversity || ''} 
+                    onChange={(e) => {
+                      setSelectedUniversity(e.target.value ? parseInt(e.target.value) : null)
+                    }} 
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  >
+                    <option value="">All Universities</option>
+                    {universities.map((uni) => (
+                      <option key={uni.id} value={uni.id}>{uni.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Program Intake</label>
+                  <select 
+                    value={selectedIntakeForDocuments || ''} 
+                    onChange={async (e) => {
+                      const intakeId = e.target.value ? parseInt(e.target.value) : null
+                      setSelectedIntakeForDocuments(intakeId)
+                      if (intakeId) {
+                        await loadAllProgramDocuments(intakeId)
+                      } else {
+                        setAllProgramDocuments([])
+                      }
+                    }} 
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  >
+                    <option value="">Select Program Intake</option>
+                    {(Array.isArray(programIntakes) ? programIntakes : (programIntakes?.items || []))
+                      .filter(intake => {
+                        if (selectedUniversity && intake.university_id !== selectedUniversity) return false
+                        return true
+                      })
+                      .map((intake) => {
+                        const uni = intake.university_name || universities.find(u => u.id === intake.university_id)?.name
+                        const major = intake.major_name || majors.find(m => m.id === intake.major_id)?.name
+                        return (
+                          <option key={intake.id} value={intake.id}>
+                            {uni} - {major} ({intake.intake_term} {intake.intake_year})
+                          </option>
+                        )
+                      })}
+                  </select>
+                </div>
+              </div>
+              
+              {/* Documents Table */}
+              {selectedIntakeForDocuments ? (
+                <ProgramDocumentsTable 
+                  intakeId={selectedIntakeForDocuments}
+                  onUpdate={() => loadAllProgramDocuments(selectedIntakeForDocuments)}
+                />
+              ) : (
+                <div className="bg-white rounded-lg border border-gray-200 p-12 text-center text-gray-500">
+                  <FileText className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                  <p>Please select a program intake to view and manage documents</p>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {activeTab === 'partners' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-gray-900">Partners</h2>
+                <button
+                  onClick={() => {
+                    resetPartnerForm()
+                    setEditingPartner(null)
+                    setShowPartnerForm(true)
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Partner
+                </button>
+              </div>
+              
+              {/* Add/Edit Partner Form */}
+              {showPartnerForm && (
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold">{editingPartner ? 'Edit' : 'Add'} Partner</h3>
+                    <button onClick={() => { setShowPartnerForm(false); setEditingPartner(null); resetPartnerForm() }} className="text-gray-500 hover:text-gray-700">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                      <input type="text" value={partnerForm.name} onChange={(e) => setPartnerForm({...partnerForm, name: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+                      <input type="text" value={partnerForm.company_name} onChange={(e) => setPartnerForm({...partnerForm, company_name: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                      <input type="email" value={partnerForm.email} onChange={(e) => setPartnerForm({...partnerForm, email: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Password {editingPartner ? '(leave empty to keep current)' : '*'}</label>
+                      <input type="password" value={partnerForm.password} onChange={(e) => setPartnerForm({...partnerForm, password: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" required={!editingPartner} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Phone 1</label>
+                      <input type="text" value={partnerForm.phone1} onChange={(e) => setPartnerForm({...partnerForm, phone1: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Phone 2</label>
+                      <input type="text" value={partnerForm.phone2} onChange={(e) => setPartnerForm({...partnerForm, phone2: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                      <input type="text" value={partnerForm.city} onChange={(e) => setPartnerForm({...partnerForm, city: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                      <input type="text" value={partnerForm.country} onChange={(e) => setPartnerForm({...partnerForm, country: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Full Address</label>
+                      <textarea value={partnerForm.full_address} onChange={(e) => setPartnerForm({...partnerForm, full_address: e.target.value})} rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Website</label>
+                      <input type="url" value={partnerForm.website} onChange={(e) => setPartnerForm({...partnerForm, website: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                      <textarea value={partnerForm.notes} onChange={(e) => setPartnerForm({...partnerForm, notes: e.target.value})} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                    </div>
+                    <div className="col-span-2 flex gap-2">
+                      <button onClick={editingPartner ? handleUpdatePartner : handleCreatePartner} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                        {editingPartner ? 'Update' : 'Create'}
+                      </button>
+                      <button onClick={() => { setShowPartnerForm(false); setEditingPartner(null); resetPartnerForm() }} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Partners Table */}
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Name</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Company</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Email</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Phone</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">City/Country</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {partners.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
+                          No partners found. Create one to get started.
+                        </td>
+                      </tr>
+                    ) : (
+                      partners.map((partner) => (
+                        <tr key={partner.id}>
+                          <td className="px-4 py-3 text-sm text-gray-900 font-medium">{partner.name}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{partner.company_name || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{partner.email}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{partner.phone1 || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{partner.city || ''}{partner.city && partner.country ? ', ' : ''}{partner.country || ''}</td>
+                          <td className="px-4 py-3 text-sm">
+                            <div className="flex gap-2">
+                              <button onClick={() => startEditPartner(partner)} className="text-blue-600 hover:text-blue-800">
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeletePartner(partner.id)} className="text-red-600 hover:text-red-800">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          
+          {activeTab === 'scholarships' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-gray-900">Scholarships</h2>
+                <button
+                  onClick={() => {
+                    setEditingScholarship(null)
+                    setScholarshipForm({ name: '', provider: '', notes: '' })
+                    setShowScholarshipForm(true)
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Scholarship
+                </button>
+              </div>
+              
+              {/* Add/Edit Scholarship Form */}
+              {showScholarshipForm && (
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <h3 className="text-lg font-semibold mb-4">{editingScholarship ? 'Edit' : 'Add'} Scholarship</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                      <input
+                        type="text"
+                        value={scholarshipForm.name}
+                        onChange={(e) => setScholarshipForm({...scholarshipForm, name: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                        placeholder="e.g., CSC, HuaShan, Freshman Scholarship"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+                      <input
+                        type="text"
+                        value={scholarshipForm.provider}
+                        onChange={(e) => setScholarshipForm({...scholarshipForm, provider: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                        placeholder="e.g., University, CSC"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                      <textarea
+                        value={scholarshipForm.notes}
+                        onChange={(e) => setScholarshipForm({...scholarshipForm, notes: e.target.value})}
+                        rows={3}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                        placeholder="Additional notes about the scholarship"
+                      />
+                    </div>
+                    <div className="col-span-2 flex gap-2">
+                      <button
+                        onClick={editingScholarship ? handleUpdateScholarship : handleCreateScholarship}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                      >
+                        {editingScholarship ? 'Update' : 'Create'} Scholarship
+                      </button>
+                      <button
+                        onClick={cancelEditScholarship}
+                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Scholarships Table */}
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Name</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Provider</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Notes</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {scholarships.length === 0 ? (
+                      <tr>
+                        <td colSpan="4" className="px-4 py-8 text-center text-gray-500">
+                          No scholarships found. Create one to get started.
+                        </td>
+                      </tr>
+                    ) : (
+                      scholarships.map((scholarship) => (
+                        <tr key={scholarship.id}>
+                          <td className="px-4 py-3 text-sm text-gray-900 font-medium">{scholarship.name}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{scholarship.provider || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{scholarship.notes || '-'}</td>
+                          <td className="px-4 py-3 text-sm">
+                            <div className="flex gap-2">
+                              <button onClick={() => startEditScholarship(scholarship)} className="text-blue-600 hover:text-blue-800">
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeleteScholarship(scholarship.id)} className="text-red-600 hover:text-red-800">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
           

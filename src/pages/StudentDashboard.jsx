@@ -27,7 +27,91 @@ export default function StudentDashboard() {
   const [extractedPassportData, setExtractedPassportData] = useState(null)
   const [showPassportAutofillNotice, setShowPassportAutofillNotice] = useState(false)
 
+  // Check for admin/partner view mode
+  const [adminViewMode, setAdminViewMode] = useState(false)
+  const [partnerViewMode, setPartnerViewMode] = useState(false)
+  const [viewingStudentId, setViewingStudentId] = useState(null)
+  
+  const loadStudentProfileAsAdmin = async (studentId) => {
+    try {
+      const response = await api.get(`/admin/students/${studentId}/profile`)
+      setStudentProfile(response.data)
+    } catch (error) {
+      console.error('Error loading student profile as admin:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const loadStudentProfileAsPartner = async (studentId) => {
+    try {
+      const response = await api.get(`/partners/me/students/${studentId}/profile`)
+      setStudentProfile(response.data)
+    } catch (error) {
+      console.error('Error loading student profile as partner:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const loadApplicationsAsAdmin = async (studentId) => {
+    try {
+      const response = await api.get(`/admin/students/${studentId}/applications`)
+      setApplications(response.data || [])
+    } catch (error) {
+      console.error('Error loading applications as admin:', error)
+    }
+  }
+  
+  const loadApplicationsAsPartner = async (studentId) => {
+    try {
+      const response = await api.get(`/partners/me/students/${studentId}/applications`)
+      setApplications(response.data || [])
+    } catch (error) {
+      console.error('Error loading applications as partner:', error)
+    }
+  }
+  
   useEffect(() => {
+    // Check URL params for admin/partner view FIRST
+    const params = new URLSearchParams(window.location.search)
+    const adminView = params.get('admin_view') === 'true'
+    const partnerView = params.get('partner_view') === 'true'
+    const studentId = params.get('student_id')
+    
+    // Admin view mode - allow admin to view any student's dashboard
+    if (adminView && studentId) {
+      if (isAuthenticated && user?.role === 'admin') {
+        setAdminViewMode(true)
+        setPartnerViewMode(false)
+        setViewingStudentId(parseInt(studentId))
+        loadStudentProfileAsAdmin(parseInt(studentId))
+        loadApplicationsAsAdmin(parseInt(studentId))
+        return
+      } else {
+        // Admin must be logged in to view student dashboard
+        navigate('/login', { replace: true })
+        return
+      }
+    }
+    
+    // Partner view mode - allow partner to view their students' dashboards
+    if (partnerView && studentId) {
+      if (isAuthenticated && user?.role === 'partner') {
+        setAdminViewMode(false)
+        setPartnerViewMode(true)
+        setViewingStudentId(parseInt(studentId))
+        loadStudentProfileAsPartner(parseInt(studentId))
+        loadApplicationsAsPartner(parseInt(studentId))
+        return
+      } else {
+        // Partner must be logged in to view student dashboard
+        navigate('/login', { replace: true })
+        return
+      }
+    }
+    
+    // Normal student view - only allow if user is a student
     if (!isAuthenticated || user?.role !== 'student') {
       navigate('/login', { replace: true })
       return
@@ -113,6 +197,44 @@ export default function StudentDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Admin/Partner View Banner */}
+      {adminViewMode && (
+        <div className="bg-yellow-100 border-b border-yellow-300 px-6 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Lock className="w-5 h-5 text-yellow-800" />
+              <p className="text-sm font-medium text-yellow-800">
+                Admin View Mode - Viewing: {studentProfile?.given_name && studentProfile?.family_name ? `${studentProfile.given_name} ${studentProfile.family_name}` : studentProfile?.full_name || studentProfile?.email || `Student ID: ${viewingStudentId}`}
+              </p>
+            </div>
+            <button
+              onClick={() => window.close()}
+              className="text-sm text-yellow-800 hover:text-yellow-900 underline"
+            >
+              Close Window
+            </button>
+          </div>
+        </div>
+      )}
+      {partnerViewMode && (
+        <div className="bg-blue-100 border-b border-blue-300 px-6 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Lock className="w-5 h-5 text-blue-800" />
+              <p className="text-sm font-medium text-blue-800">
+                Partner View Mode - Viewing: {studentProfile?.given_name && studentProfile?.family_name ? `${studentProfile.given_name} ${studentProfile.family_name}` : studentProfile?.full_name || studentProfile?.email || `Student ID: ${viewingStudentId}`}
+              </p>
+            </div>
+            <button
+              onClick={() => window.close()}
+              className="text-sm text-blue-800 hover:text-blue-900 underline"
+            >
+              Close Window
+            </button>
+          </div>
+        </div>
+      )}
+      
       <div className="flex flex-col lg:flex-row gap-6 p-4 lg:p-6">
         {/* Left Sidebar - User Profile */}
         <div className="w-full lg:w-80 flex-shrink-0">
@@ -122,7 +244,7 @@ export default function StudentDashboard() {
                 <User className="w-12 h-12 text-teal-600" />
               </div>
               <h2 className="text-xl font-bold text-gray-800 mb-1">
-                {studentProfile?.full_name || user?.name || 'Student'}
+                {studentProfile?.given_name && studentProfile?.family_name ? `${studentProfile.given_name} ${studentProfile.family_name}` : studentProfile?.full_name || user?.name || 'Student'}
               </h2>
               <p className="text-gray-600 text-sm mb-4">{user?.email}</p>
               <button className="flex items-center gap-2 text-teal-600 hover:text-teal-700 text-sm font-medium mx-auto mb-4">
@@ -230,6 +352,17 @@ export default function StudentDashboard() {
                 COVA
               </button>
               <button
+                onClick={() => setActiveTab('additional')}
+                className={`flex items-center gap-2 px-4 py-3 font-medium text-sm transition-colors ${
+                  activeTab === 'additional'
+                    ? 'text-teal-600 border-b-2 border-teal-600'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                Additional Info
+              </button>
+              <button
                 onClick={() => setActiveTab('security')}
                 className={`flex items-center gap-2 px-4 py-3 font-medium text-sm transition-colors ${
                   activeTab === 'security'
@@ -243,15 +376,16 @@ export default function StudentDashboard() {
             </div>
 
             {/* Tab Content */}
-            {activeTab === 'personal' && <PersonalInfoTab profile={studentProfile} onUpdate={loadStudentProfile} extractedPassportData={extractedPassportData} onPassportDataUsed={() => setExtractedPassportData(null)} />}
-            {activeTab === 'passport' && <PassportScoresTab profile={studentProfile} onUpdate={loadStudentProfile} extractedPassportData={extractedPassportData} onPassportDataUsed={() => setExtractedPassportData(null)} />}
-            {activeTab === 'programs' && <ProgramsTab applications={applications} onUpdate={loadApplications} />}
-            {activeTab === 'documents' && <DocumentsTab studentId={studentProfile?.id} profile={studentProfile} onUpdate={loadStudentProfile} onPassportExtracted={(data) => {
+            {activeTab === 'personal' && <PersonalInfoTab profile={studentProfile} onUpdate={(adminViewMode || partnerViewMode) ? (adminViewMode ? () => loadStudentProfileAsAdmin(viewingStudentId) : () => loadStudentProfileAsPartner(viewingStudentId)) : loadStudentProfile} extractedPassportData={extractedPassportData} onPassportDataUsed={() => setExtractedPassportData(null)} adminViewMode={adminViewMode} partnerViewMode={partnerViewMode} viewingStudentId={viewingStudentId} />}
+            {activeTab === 'passport' && <PassportScoresTab profile={studentProfile} onUpdate={(adminViewMode || partnerViewMode) ? (adminViewMode ? () => loadStudentProfileAsAdmin(viewingStudentId) : () => loadStudentProfileAsPartner(viewingStudentId)) : loadStudentProfile} extractedPassportData={extractedPassportData} onPassportDataUsed={() => setExtractedPassportData(null)} adminViewMode={adminViewMode} partnerViewMode={partnerViewMode} viewingStudentId={viewingStudentId} />}
+            {activeTab === 'programs' && <ProgramsTab applications={applications} onUpdate={(adminViewMode || partnerViewMode) ? (adminViewMode ? () => loadApplicationsAsAdmin(viewingStudentId) : () => loadApplicationsAsPartner(viewingStudentId)) : loadApplications} />}
+            {activeTab === 'documents' && <DocumentsTab studentId={studentProfile?.id} profile={studentProfile} onUpdate={(adminViewMode || partnerViewMode) ? (adminViewMode ? () => loadStudentProfileAsAdmin(viewingStudentId) : () => loadStudentProfileAsPartner(viewingStudentId)) : loadStudentProfile} onPassportExtracted={(data) => {
               setExtractedPassportData(data)
               setShowPassportAutofillNotice(true)
-            }} />}
-            {activeTab === 'cova' && <CovaTab profile={studentProfile} onUpdate={loadStudentProfile} />}
-            {activeTab === 'security' && <SecurityTab />}
+            }} adminViewMode={adminViewMode} partnerViewMode={partnerViewMode} viewingStudentId={viewingStudentId} />}
+            {activeTab === 'additional' && <AdditionalInfoTab profile={studentProfile} onUpdate={(adminViewMode || partnerViewMode) ? (adminViewMode ? () => loadStudentProfileAsAdmin(viewingStudentId) : () => loadStudentProfileAsPartner(viewingStudentId)) : loadStudentProfile} adminViewMode={adminViewMode} partnerViewMode={partnerViewMode} viewingStudentId={viewingStudentId} />}
+            {activeTab === 'security' && <SecurityTab adminViewMode={adminViewMode} partnerViewMode={partnerViewMode} viewingStudentId={viewingStudentId} />}
+            {activeTab === 'cova' && <CovaTab profile={studentProfile} onUpdate={(adminViewMode || partnerViewMode) ? (adminViewMode ? () => loadStudentProfileAsAdmin(viewingStudentId) : () => loadStudentProfileAsPartner(viewingStudentId)) : loadStudentProfile} adminViewMode={adminViewMode} partnerViewMode={partnerViewMode} viewingStudentId={viewingStudentId} />}
           </div>
 
           {/* Passport Autofill Notice */}
@@ -319,7 +453,7 @@ export default function StudentDashboard() {
 
 function calculateProfileComplete(profile) {
   const fields = [
-    'full_name', 'email', 'phone', 'country_of_citizenship',
+    'given_name', 'family_name', 'email', 'phone', 'country_of_citizenship',
     'date_of_birth', 'passport_number', 'current_address'
   ]
   const filled = fields.filter(field => profile[field]).length
@@ -327,9 +461,8 @@ function calculateProfileComplete(profile) {
 }
 
 // Personal Info Tab Component
-function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportDataUsed }) {
+function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportDataUsed, adminViewMode = false, partnerViewMode = false, viewingStudentId = null }) {
   const [formData, setFormData] = useState({
-    full_name: profile?.full_name || '',
     given_name: profile?.given_name || '',
     family_name: profile?.family_name || '',
     father_name: profile?.father_name || '',
@@ -337,7 +470,6 @@ function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportD
     gender: profile?.gender || '',
     email: profile?.email || '',
     phone: profile?.phone || '',
-    wechat_id: profile?.wechat_id || '',
     country_of_citizenship: profile?.country_of_citizenship || '',
     date_of_birth: profile?.date_of_birth ? profile.date_of_birth.split('T')[0] : '',
     current_address: profile?.current_address || '',
@@ -352,6 +484,12 @@ function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportD
     marital_status: profile?.marital_status || '',
     religion: profile?.religion || '',
     occupation: profile?.occupation || '',
+    native_language: profile?.native_language || '',
+    employer_or_institution_affiliated: profile?.employer_or_institution_affiliated || '',
+    health_status: profile?.health_status || '',
+    hobby: profile?.hobby || '',
+    is_ethnic_chinese: profile?.is_ethnic_chinese || false,
+    video_url: profile?.video_url || '',
     relation_with_guarantor: profile?.relation_with_guarantor || '',
     is_the_bank_guarantee_in_students_name: profile?.is_the_bank_guarantee_in_students_name !== undefined ? profile.is_the_bank_guarantee_in_students_name : true
   })
@@ -365,14 +503,21 @@ function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportD
       
       setFormData(prev => {
         const updates = {}
-        if (extractedPassportData.name && !prev.full_name) {
-          updates.full_name = extractedPassportData.name
-        }
         if (extractedPassportData.given_name && !prev.given_name) {
           updates.given_name = extractedPassportData.given_name
         }
         if (extractedPassportData.family_name && !prev.family_name) {
           updates.family_name = extractedPassportData.family_name
+        }
+        // If name exists but given_name/family_name don't, try to split
+        if (extractedPassportData.name && !prev.given_name && !prev.family_name) {
+          const nameParts = extractedPassportData.name.trim().split(' ', 2)
+          if (nameParts.length > 0) {
+            updates.given_name = nameParts[0]
+            if (nameParts.length > 1) {
+              updates.family_name = nameParts.slice(1).join(' ')
+            }
+          }
         }
         if (extractedPassportData.father_name && !prev.father_name) {
           updates.father_name = extractedPassportData.father_name
@@ -413,7 +558,15 @@ function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportD
           submitData[key] = null
         }
       })
-      await api.put('/students/me', submitData)
+      
+      // Use admin/partner endpoint if in admin/partner view mode
+      if (adminViewMode && viewingStudentId) {
+        await api.put(`/admin/students/${viewingStudentId}/profile`, submitData)
+      } else if (partnerViewMode && viewingStudentId) {
+        await api.put(`/partners/me/students/${viewingStudentId}/profile`, submitData)
+      } else {
+        await api.put('/students/me', submitData)
+      }
       onUpdate()
       alert('Profile updated successfully!')
     } catch (error) {
@@ -428,17 +581,7 @@ function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportD
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-          <input
-            type="text"
-            value={formData.full_name}
-            onChange={(e) => setFormData({...formData, full_name: e.target.value})}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-            required
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">First Name (Given Name)</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">First Name (Given Name) *</label>
           <input
             type="text"
             value={formData.given_name}
@@ -448,7 +591,7 @@ function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportD
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Last Name (Family Name)</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Last Name (Family Name) *</label>
           <input
             type="text"
             value={formData.family_name}
@@ -490,34 +633,53 @@ function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportD
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Email Address *</label>
           <input
             type="email"
             value={formData.email}
-            onChange={(e) => setFormData({...formData, email: e.target.value})}
+            onChange={(e) => {
+              const email = e.target.value
+              setFormData({...formData, email: email})
+            }}
+            onBlur={(e) => {
+              const email = e.target.value.trim()
+              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+              if (email && !emailRegex.test(email)) {
+                alert('Please enter a valid email address')
+              }
+            }}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
             required
+            pattern="[^\s@]+@[^\s@]+\.[^\s@]+"
+            title="Please enter a valid email address (e.g., example@email.com)"
           />
+          <p className="text-xs text-gray-500 mt-1">Format: example@email.com</p>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
           <input
             type="tel"
             value={formData.phone}
-            onChange={(e) => setFormData({...formData, phone: e.target.value})}
+            onChange={(e) => {
+              // Allow only digits, +, -, spaces, and parentheses
+              const phone = e.target.value.replace(/[^\d+\-() ]/g, '')
+              setFormData({...formData, phone: phone})
+            }}
+            onBlur={(e) => {
+              const phone = e.target.value.trim().replace(/\s+/g, '')
+              // Basic phone validation: at least 7 digits
+              const phoneRegex = /^[\d+\-()]{7,}$/
+              if (phone && !phoneRegex.test(phone)) {
+                alert('Please enter a valid phone number (at least 7 digits)')
+              }
+            }}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
             required
+            pattern="[\d+\-() ]{7,}"
+            title="Please enter a valid phone number (e.g., +1234567890 or 123-456-7890)"
+            placeholder="e.g., +1234567890 or 123-456-7890"
           />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">WeChat ID</label>
-          <input
-            type="text"
-            value={formData.wechat_id}
-            onChange={(e) => setFormData({...formData, wechat_id: e.target.value})}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-            placeholder="Optional"
-          />
+          <p className="text-xs text-gray-500 mt-1">Format: +1234567890 or 123-456-7890 (minimum 7 digits)</p>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Nationality</label>
@@ -572,14 +734,22 @@ function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportD
         <h4 className="text-md font-semibold text-gray-800 mb-4">Highest Degree Information</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Degree Name *</label>
-            <input
-              type="text"
+            <label className="block text-sm font-medium text-gray-700 mb-2">Highest Level of Education Completed/to be Completed *</label>
+            <select
               value={formData.highest_degree_name}
               onChange={(e) => setFormData({...formData, highest_degree_name: e.target.value})}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-              placeholder="e.g., H.S.C., A-level, Bachelor, Master, etc."
-            />
+              required
+            >
+              <option value="">Select Education Level</option>
+              <option value="Junior high">Junior high</option>
+              <option value="Senior high">Senior high</option>
+              <option value="Technical secondary">Technical secondary</option>
+              <option value="Vocational College">Vocational College</option>
+              <option value="Bachelor">Bachelor</option>
+              <option value="Master">Master</option>
+              <option value="Dr./Phd">Dr./Phd</option>
+            </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Degree Medium</label>
@@ -619,13 +789,27 @@ function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportD
             <input
               type="number"
               min="1950"
-              max={new Date().getFullYear() + 1}
+              max={new Date().getFullYear() + 5}
               value={formData.highest_degree_year}
-              onChange={(e) => setFormData({...formData, highest_degree_year: e.target.value ? parseInt(e.target.value) : ''})}
+              onChange={(e) => {
+                const year = e.target.value.replace(/\D/g, '') // Only digits
+                if (year === '' || (parseInt(year) >= 1950 && parseInt(year) <= new Date().getFullYear() + 5)) {
+                  setFormData({...formData, highest_degree_year: year ? parseInt(year) : ''})
+                }
+              }}
+              onBlur={(e) => {
+                const year = parseInt(e.target.value)
+                const currentYear = new Date().getFullYear()
+                if (e.target.value && (year < 1950 || year > currentYear + 5)) {
+                  alert(`Please enter a valid graduation year (between 1950 and ${currentYear + 5})`)
+                }
+              }}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
               placeholder="e.g., 2024"
               required
+              title={`Enter graduation year (1950 - ${new Date().getFullYear() + 5})`}
             />
+            <p className="text-xs text-gray-500 mt-1">Enter year between 1950 and {new Date().getFullYear() + 5}</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">CGPA/GPA *</label>
@@ -635,12 +819,29 @@ function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportD
               min="0"
               max="10"
               value={formData.highest_degree_cgpa}
-              onChange={(e) => setFormData({...formData, highest_degree_cgpa: e.target.value ? parseFloat(e.target.value) : ''})}
+              onChange={(e) => {
+                const value = e.target.value
+                // Allow digits, one decimal point, and one decimal place
+                const cgpaRegex = /^\d*\.?\d{0,2}$/
+                if (value === '' || cgpaRegex.test(value)) {
+                  const numValue = parseFloat(value)
+                  if (value === '' || (numValue >= 0 && numValue <= 10.0)) {
+                    setFormData({...formData, highest_degree_cgpa: value === '' ? '' : numValue})
+                  }
+                }
+              }}
+              onBlur={(e) => {
+                const cgpa = parseFloat(e.target.value)
+                if (e.target.value && (isNaN(cgpa) || cgpa < 0 || cgpa > 10.0)) {
+                  alert('Please enter a valid CGPA/GPA (0.00 - 10.00)')
+                }
+              }}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-              placeholder="e.g., 3.75"
+              placeholder="e.g., 3.75 or 8.5"
               required
+              title="Enter CGPA/GPA (0.00 - 10.00)"
             />
-            <p className="text-xs text-gray-500 mt-1">Enter your CGPA or GPA (out of 4.0 or 10.0 scale)</p>
+            <p className="text-xs text-gray-500 mt-1">Enter your CGPA or GPA (0.00 - 10.00 scale, e.g., 3.75 for 4.0 scale or 8.5 for 10.0 scale)</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Number of Published Papers</label>
@@ -680,23 +881,131 @@ function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportD
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
             >
               <option value="">Select Religion</option>
-              <option value="Islam">Islam</option>
+              <option value="Anglican">Anglican</option>
+              <option value="Atheism">Atheism</option>
+              <option value="Mormon">Mormon</option>
               <option value="Christianity">Christianity</option>
+              <option value="Judaism">Judaism</option>
               <option value="Catholicism">Catholicism</option>
+              <option value="Eastern Orthodoxy">Eastern Orthodoxy</option>
+              <option value="Hinduism">Hinduism</option>
+              <option value="Islam">Islam</option>
               <option value="Buddhism">Buddhism</option>
+              <option value="Taoism">Taoism</option>
+              <option value="None">None</option>
+              <option value="Lutheranism">Lutheranism</option>
               <option value="Other">Other</option>
-              <option value="No Religion">No Religion</option>
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Occupation</label>
-            <input
-              type="text"
+            <select
               value={formData.occupation}
               onChange={(e) => setFormData({...formData, occupation: e.target.value})}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-              placeholder="e.g., student, business"
+            >
+              <option value="">Select Occupation</option>
+              <option value="Employee">Employee</option>
+              <option value="Student">Student</option>
+              <option value="Teacher">Teacher</option>
+              <option value="Doctor">Doctor</option>
+              <option value="Labourer">Labourer</option>
+              <option value="Army service">Army service</option>
+              <option value="Engineers">Engineers</option>
+              <option value="Scholars">Scholars</option>
+              <option value="Housewife">Housewife</option>
+              <option value="Retired">Retired</option>
+              <option value="Manager">Manager</option>
+              <option value="Officer">Officer</option>
+              <option value="Farmer">Farmer</option>
+              <option value="Reporter">Reporter</option>
+              <option value="Monks and priests">Monks and priests</option>
+              <option value="Religious">Religious</option>
+              <option value="Others">Others</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Native Language</label>
+            <select
+              value={formData.native_language}
+              onChange={(e) => setFormData({...formData, native_language: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            >
+              <option value="">Select Native Language</option>
+              <option value="Chinese">Chinese</option>
+              <option value="English">English</option>
+              <option value="Bengali">Bengali</option>
+              <option value="Hindi">Hindi</option>
+              <option value="Urdu">Urdu</option>
+              <option value="Arabic">Arabic</option>
+              <option value="Spanish">Spanish</option>
+              <option value="French">French</option>
+              <option value="German">German</option>
+              <option value="Russian">Russian</option>
+              <option value="Japanese">Japanese</option>
+              <option value="Korean">korean</option>
+              <option value="Vietnamese">Vietnamese</option>
+              <option value="Thai">Thai</option>
+              <option value="Indonesian">Indonesian</option>
+              <option value="Malay">Malay</option>
+              <option value="Turkish">Turkish</option>
+              <option value="Persian">Persian</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Employer or Institution Affiliated</label>
+            <input
+              type="text"
+              value={formData.employer_or_institution_affiliated}
+              onChange={(e) => setFormData({...formData, employer_or_institution_affiliated: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              placeholder="Enter employer or institution name"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Health Status</label>
+            <input
+              type="text"
+              value={formData.health_status}
+              onChange={(e) => setFormData({...formData, health_status: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              placeholder="Enter health status"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Hobby</label>
+            <input
+              type="text"
+              value={formData.hobby}
+              onChange={(e) => setFormData({...formData, hobby: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              placeholder="e.g., sports, reading, music"
+            />
+          </div>
+          <div>
+            <label className="flex items-center gap-2 mb-2">
+              <input
+                type="checkbox"
+                checked={formData.is_ethnic_chinese}
+                onChange={(e) => setFormData({...formData, is_ethnic_chinese: e.target.checked})}
+                className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                Are you Ethnic Chinese?
+              </span>
+            </label>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">3-5 Minutes Video Url</label>
+            <input
+              type="url"
+              value={formData.video_url}
+              onChange={(e) => setFormData({...formData, video_url: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              placeholder="https://example.com/video-url"
+            />
+            <p className="text-xs text-gray-500 mt-1">Enter URL for your 3-5 minutes introduction video (optional)</p>
           </div>
         </div>
       </div>
@@ -749,11 +1058,13 @@ function PersonalInfoTab({ profile, onUpdate, extractedPassportData, onPassportD
 }
 
 // Passport & Scores Tab Component
-function PassportScoresTab({ profile, onUpdate, extractedPassportData, onPassportDataUsed }) {
+function PassportScoresTab({ profile, onUpdate, extractedPassportData, onPassportDataUsed, adminViewMode = false, partnerViewMode = false, viewingStudentId = null }) {
   const [formData, setFormData] = useState({
     passport_number: profile?.passport_number || '',
     passport_expiry_date: profile?.passport_expiry_date ? profile.passport_expiry_date.split('T')[0] : '',
     hsk_score: profile?.hsk_score || '',
+    level_of_hsk: profile?.level_of_hsk || '',
+    hsk_test_score_report_no: profile?.hsk_test_score_report_no || '',
     hsk_certificate_date: profile?.hsk_certificate_date ? profile.hsk_certificate_date.split('T')[0] : '',
     hskk_level: profile?.hskk_level || '',
     hskk_score: profile?.hskk_score || '',
@@ -763,7 +1074,11 @@ function PassportScoresTab({ profile, onUpdate, extractedPassportData, onPasspor
     csca_score_physics: profile?.csca_score_physics || '',
     csca_score_chemistry: profile?.csca_score_chemistry || '',
     english_test_type: profile?.english_test_type || 'NONE',
-    english_test_score: profile?.english_test_score || ''
+    english_test_score: profile?.english_test_score || '',
+    english_language_proficiency: profile?.english_language_proficiency || '',
+    chinese_language_proficiency: profile?.chinese_language_proficiency || '',
+    other_certificate_english_name: profile?.other_certificate_english_name || '',
+    other_language_proficiency: profile?.other_language_proficiency || ''
   })
   const [saving, setSaving] = useState(false)
 
@@ -811,7 +1126,14 @@ function PassportScoresTab({ profile, onUpdate, extractedPassportData, onPasspor
           submitData[key] = null
         }
       })
-      await api.put('/students/me', submitData)
+      // Use admin/partner endpoint if in admin/partner view mode
+      if (adminViewMode && viewingStudentId) {
+        await api.put(`/admin/students/${viewingStudentId}/profile`, submitData)
+      } else if (partnerViewMode && viewingStudentId) {
+        await api.put(`/partners/me/students/${viewingStudentId}/profile`, submitData)
+      } else {
+        await api.put('/students/me', submitData)
+      }
       onUpdate()
       alert('Passport & Scores updated successfully!')
     } catch (error) {
@@ -849,6 +1171,26 @@ function PassportScoresTab({ profile, onUpdate, extractedPassportData, onPasspor
       <h3 className="text-lg font-semibold text-gray-800 mb-4 mt-8">Language & Test Scores</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">HSK Level</label>
+          <select
+            value={formData.level_of_hsk}
+            onChange={(e) => setFormData({...formData, level_of_hsk: e.target.value})}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+          >
+            <option value="">Select HSK Level</option>
+            <option value="none">None</option>
+            <option value="HSK LEVEL 1">HSK LEVEL 1</option>
+            <option value="HSK LEVEL 2">HSK LEVEL 2</option>
+            <option value="HSK LEVEL 3">HSK LEVEL 3</option>
+            <option value="HSK LEVEL 4">HSK LEVEL 4</option>
+            <option value="HSK LEVEL 5">HSK LEVEL 5</option>
+            <option value="HSK LEVEL 6">HSK LEVEL 6</option>
+            <option value="HSK LEVEL 7">HSK LEVEL 7</option>
+            <option value="HSK LEVEL 8">HSK LEVEL 8</option>
+            <option value="HSK LEVEL 9">HSK LEVEL 9</option>
+          </select>
+        </div>
+        <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">HSK Score</label>
           <input
             type="number"
@@ -858,6 +1200,16 @@ function PassportScoresTab({ profile, onUpdate, extractedPassportData, onPasspor
             onChange={(e) => setFormData({...formData, hsk_score: e.target.value ? parseFloat(e.target.value) : ''})}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
             placeholder="Enter HSK score"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">HSK Test Score Report No.</label>
+          <input
+            type="text"
+            value={formData.hsk_test_score_report_no}
+            onChange={(e) => setFormData({...formData, hsk_test_score_report_no: e.target.value})}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            placeholder="Enter HSK test score report number"
           />
         </div>
         <div>
@@ -954,11 +1306,16 @@ function PassportScoresTab({ profile, onUpdate, extractedPassportData, onPasspor
             onChange={(e) => setFormData({...formData, english_test_type: e.target.value})}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
           >
-            <option value="NONE">None</option>
+            <option value="None">None</option>
             <option value="IELTS">IELTS</option>
             <option value="TOEFL">TOEFL</option>
+            <option value="GRE">GRE</option>
+            <option value="GMAT">GMAT</option>
+            <option value="Duolingo">Duolingo</option>
             <option value="TOEIC">TOEIC</option>
-            <option value="OTHER">Other</option>
+            <option value="PTE">PTE</option>
+            <option value="Native Language">Native Language</option>
+            <option value="Other">Other</option>
           </select>
         </div>
         <div>
@@ -969,6 +1326,56 @@ function PassportScoresTab({ profile, onUpdate, extractedPassportData, onPasspor
             value={formData.english_test_score}
             onChange={(e) => setFormData({...formData, english_test_score: e.target.value ? parseFloat(e.target.value) : ''})}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Other Certificate for English Name</label>
+          <input
+            type="text"
+            value={formData.other_certificate_english_name}
+            onChange={(e) => setFormData({...formData, other_certificate_english_name: e.target.value})}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            placeholder="Enter other English certificate name"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">English Language Proficiency</label>
+          <select
+            value={formData.english_language_proficiency}
+            onChange={(e) => setFormData({...formData, english_language_proficiency: e.target.value})}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+          >
+            <option value="">Select Proficiency</option>
+            <option value="None">None</option>
+            <option value="Poor">Poor</option>
+            <option value="Fair">Fair</option>
+            <option value="Good">Good</option>
+            <option value="Excellent">Excellent</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Chinese Language Proficiency</label>
+          <select
+            value={formData.chinese_language_proficiency}
+            onChange={(e) => setFormData({...formData, chinese_language_proficiency: e.target.value})}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+          >
+            <option value="">Select Proficiency</option>
+            <option value="None">None</option>
+            <option value="Poor">Poor</option>
+            <option value="Fair">Fair</option>
+            <option value="Good">Good</option>
+            <option value="Excellent">Excellent</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Other Language Proficiency</label>
+          <input
+            type="text"
+            value={formData.other_language_proficiency}
+            onChange={(e) => setFormData({...formData, other_language_proficiency: e.target.value})}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            placeholder="Enter other language proficiency details"
           />
         </div>
       </div>
@@ -984,7 +1391,7 @@ function PassportScoresTab({ profile, onUpdate, extractedPassportData, onPasspor
 }
 
 // COVA Tab Component
-function CovaTab({ profile, onUpdate }) {
+function CovaTab({ profile, onUpdate, adminViewMode = false, partnerViewMode = false, viewingStudentId = null }) {
   const [formData, setFormData] = useState({
     home_address: profile?.home_address || '',
     current_address: profile?.current_address || '',
@@ -1004,7 +1411,12 @@ function CovaTab({ profile, onUpdate }) {
     e.preventDefault()
     setSaving(true)
     try {
-      await api.put('/students/me', formData)
+      // Use admin endpoint if in admin view mode
+      if (adminViewMode && viewingStudentId) {
+        await api.put(`/admin/students/${viewingStudentId}/profile`, formData)
+      } else {
+        await api.put('/students/me', formData)
+      }
       onUpdate()
       alert('COVA information updated successfully!')
     } catch (error) {
@@ -1167,6 +1579,23 @@ function ProgramsTab({ applications, onUpdate }) {
     scholarship_preference: ''
   })
   const [loading, setLoading] = useState(false)
+  
+  // Check if selected major is a language program
+  const isLanguageProgram = () => {
+    if (formData.degree_level === 'Language') {
+      return true
+    }
+    if (formData.major_id) {
+      const selectedMajor = majors.find(m => m.id === parseInt(formData.major_id))
+      if (selectedMajor) {
+        const majorName = selectedMajor.name.toLowerCase()
+        return majorName.includes('chinese language') || 
+               majorName.includes('language') ||
+               majorName.includes('chinese')
+      }
+    }
+    return false
+  }
 
   useEffect(() => {
     loadUniversities()
@@ -1403,17 +1832,24 @@ function ProgramsTab({ applications, onUpdate }) {
                             }}
                             className="text-sm font-semibold text-teal-600 border border-teal-300 rounded px-2 py-1 flex-1"
                             autoFocus
+                            disabled={app.degree_level === 'Language' || (app.major_name && (app.major_name.toLowerCase().includes('chinese language') || app.major_name.toLowerCase().includes('language')))}
                           >
-                            <option value="">No Scholarship</option>
-                            <option value="Type-A">Type-A (Full scholarship with stipend) - 900 USD (English) / 700 USD (Chinese) Charge</option>
-                            <option value="Type-B">Type-B (Full scholarship without stipend) - 700 USD (English) / 600 USD (Chinese) Charge</option>
-                            <option value="Type-C">Type-C (Only tuition free) - 500 USD (English) / 400 USD (Chinese) Charge</option>
-                            <option value="Type-D">Type-D (Only tuition free - alternative) - 500 USD (English) / 400 USD (Chinese) Charge</option>
-                            <option value="Partial-Low">Partial Scholarship (&lt;5000 CNY/year) - 500 USD Charge</option>
-                            <option value="Partial-Mid">Partial Scholarship (5100-10000 CNY/year) - 350 USD Charge</option>
-                            <option value="Partial-High">Partial Scholarship (10000-15000 CNY/year) - 300 USD Charge</option>
-                            <option value="Self-Paid">Self-Paid - 150 USD Charge</option>
-                            <option value="None">Language Programs (No scholarship) - 150 USD Charge</option>
+                            {(app.degree_level === 'Language' || (app.major_name && (app.major_name.toLowerCase().includes('chinese language') || app.major_name.toLowerCase().includes('language')))) ? (
+                              <option value="None">Language Programs (No scholarship) - 150 USD Charge</option>
+                            ) : (
+                              <>
+                                <option value="">No Scholarship</option>
+                                <option value="Type-A">Type-A (Full scholarship with stipend) - 900 USD (English) / 700 USD (Chinese) Charge</option>
+                                <option value="Type-B">Type-B (Full scholarship without stipend) - 700 USD (English) / 600 USD (Chinese) Charge</option>
+                                <option value="Type-C">Type-C (Only tuition free) - 500 USD (English) / 400 USD (Chinese) Charge</option>
+                                <option value="Type-D">Type-D (Only tuition free - alternative) - 500 USD (English) / 400 USD (Chinese) Charge</option>
+                                <option value="Partial-Low">Partial Scholarship (&lt;5000 CNY/year) - 500 USD Charge</option>
+                                <option value="Partial-Mid">Partial Scholarship (5100-10000 CNY/year) - 350 USD Charge</option>
+                                <option value="Partial-High">Partial Scholarship (10000-15000 CNY/year) - 300 USD Charge</option>
+                                <option value="Self-Paid">Self-Paid - 150 USD Charge</option>
+                                <option value="None">Language Programs (No scholarship) - 150 USD Charge</option>
+                              </>
+                            )}
                           </select>
                           <button
                             onClick={() => {
@@ -1493,7 +1929,15 @@ function ProgramsTab({ applications, onUpdate }) {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Degree Level *</label>
                 <select
                   value={formData.degree_level || ''}
-                  onChange={(e) => setFormData({ ...formData, degree_level: e.target.value })}
+                  onChange={(e) => {
+                    const degreeLevel = e.target.value
+                    // If Language is selected, automatically set scholarship preference to None
+                    setFormData({ 
+                      ...formData, 
+                      degree_level: degreeLevel,
+                      scholarship_preference: degreeLevel === 'Language' ? 'None' : formData.scholarship_preference
+                    })
+                  }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                   required
                 >
@@ -1517,7 +1961,7 @@ function ProgramsTab({ applications, onUpdate }) {
                   value={formData.university_id || ''}
                   onChange={async (e) => {
                     const uniId = e.target.value
-                    setFormData({ ...formData, university_id: uniId, major_id: '', program_intake_id: '' })
+                    setFormData({ ...formData, university_id: uniId, major_id: '', program_intake_id: '', scholarship_preference: '' })
                     setMajors([])
                     setProgramIntakes([])
                     if (uniId) {
@@ -1545,7 +1989,16 @@ function ProgramsTab({ applications, onUpdate }) {
                   value={formData.major_id || ''}
                   onChange={async (e) => {
                     const majorId = e.target.value
-                    setFormData({ ...formData, major_id: majorId, program_intake_id: '' })
+                    const selectedMajor = majors.find(m => m.id === parseInt(majorId))
+                    const isLang = formData.degree_level === 'Language' || 
+                                  (selectedMajor && (selectedMajor.name.toLowerCase().includes('chinese language') || 
+                                                    selectedMajor.name.toLowerCase().includes('language')))
+                    setFormData({ 
+                      ...formData, 
+                      major_id: majorId, 
+                      program_intake_id: '',
+                      scholarship_preference: isLang ? 'None' : formData.scholarship_preference
+                    })
                     setProgramIntakes([])
                     if (majorId && formData.university_id) {
                       await loadProgramIntakes(formData.university_id, majorId)
@@ -1594,19 +2047,30 @@ function ProgramsTab({ applications, onUpdate }) {
                   value={formData.scholarship_preference}
                   onChange={(e) => setFormData({ ...formData, scholarship_preference: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  disabled={isLanguageProgram()}
                 >
-                  <option value="">No Scholarship</option>
-                  <option value="Type-A">Type-A (Full scholarship with stipend) - 900 USD (English) / 700 USD (Chinese) Charge</option>
-                  <option value="Type-B">Type-B (Full scholarship without stipend) - 700 USD (English) / 600 USD (Chinese) Charge</option>
-                  <option value="Type-C">Type-C (Only tuition free) - 500 USD (English) / 400 USD (Chinese)  Charge </option>
-                  <option value="Type-D">Type-D (Only tuition free - alternative) - 500 USD (English) / 400 USD (Chinese) Charge</option>
-                  <option value="Partial-Low">Partial Scholarship (&lt;5000 CNY/year) - 500 USD Charge</option>
-                  <option value="Partial-Mid">Partial Scholarship (5100-10000 CNY/year) - 350 USD Charge</option>
-                  <option value="Partial-High">Partial Scholarship (10000-15000 CNY/year) - 300 USD Charge</option>
-                  <option value="Self-Paid">Self-Paid - 150 USD Charge</option>
-                  <option value="None">Language Programs (No scholarship) - 150 USD Charge</option>
+                  {isLanguageProgram() ? (
+                    <option value="None">Language Programs (No scholarship) - 150 USD Charge</option>
+                  ) : (
+                    <>
+                      <option value="">No Scholarship</option>
+                      <option value="Type-A">Type-A (Full scholarship with stipend) - 900 USD (English) / 700 USD (Chinese) Charge</option>
+                      <option value="Type-B">Type-B (Full scholarship without stipend) - 700 USD (English) / 600 USD (Chinese) Charge</option>
+                      <option value="Type-C">Type-C (Only tuition free) - 500 USD (English) / 400 USD (Chinese)  Charge </option>
+                      <option value="Type-D">Type-D (Only tuition free - alternative) - 500 USD (English) / 400 USD (Chinese) Charge</option>
+                      <option value="Partial-Low">Partial Scholarship (&lt;5000 CNY/year) - 500 USD Charge</option>
+                      <option value="Partial-Mid">Partial Scholarship (5100-10000 CNY/year) - 350 USD Charge</option>
+                      <option value="Partial-High">Partial Scholarship (10000-15000 CNY/year) - 300 USD Charge</option>
+                      <option value="Self-Paid">Self-Paid - 150 USD Charge</option>
+                      <option value="None">Language Programs (No scholarship) - 150 USD Charge</option>
+                    </>
+                  )}
                 </select>
-                <p className="text-xs text-gray-500 mt-1">Note: Language programs have no scholarship</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {isLanguageProgram() 
+                    ? 'Language programs have no scholarship options. Only the language program charge applies.' 
+                    : 'Note: Language programs have no scholarship'}
+                </p>
               </div>
 
               <div className="flex gap-3 pt-4">
@@ -1639,20 +2103,26 @@ function ProgramsTab({ applications, onUpdate }) {
 }
 
 // Documents Tab Component
-function DocumentsTab({ studentId, profile, onUpdate, onPassportExtracted }) {
+function DocumentsTab({ studentId, profile, onUpdate, onPassportExtracted, adminViewMode = false, partnerViewMode = false, viewingStudentId = null }) {
   const [uploading, setUploading] = useState({})
   const [documents, setDocuments] = useState([])
   const fileInputRefs = useRef({})
 
   useEffect(() => {
     loadDocuments()
-  }, [])
+  }, [adminViewMode, partnerViewMode, viewingStudentId])
 
   const loadDocuments = async () => {
     try {
-      // Load verified documents from student-documents endpoint
-      const response = await api.get('/verify-document/student-documents')
-      setDocuments(response.data || [])
+      if (adminViewMode && viewingStudentId) {
+        // Use admin endpoint for documents
+        const response = await api.get(`/admin/students/${viewingStudentId}/documents`)
+        setDocuments(response.data || [])
+      } else {
+        // Load verified documents from student-documents endpoint
+        const response = await api.get('/verify-document/student-documents')
+        setDocuments(response.data || [])
+      }
     } catch (error) {
       console.error('Error loading documents:', error)
       // Fallback to old endpoint
@@ -1686,15 +2156,15 @@ function DocumentsTab({ studentId, profile, onUpdate, onPassportExtracted }) {
       id: 'photo',
       title: 'Passport Size Photo',
       icon: '👤',
-      description: 'Upload your passport size photograph',
+      description: 'Colored 2-inch bare-headed photo. Requirements: JPG/JPEG format, 100-500KB, minimum 295×413 pixels, 4:3 ratio, white background without border, head accounts for 2/3 of photo size, width < height (portrait orientation)',
       documentType: 'photo',
       field: 'passport_photo_url'
     },
     {
       id: 'transcript',
-      title: 'Academic Transcripts',
+      title: 'Highest Diploma Transcript',
       icon: '🎓',
-      description: 'Upload scanned color copies of your academic transcripts',
+      description: 'Upload scanned color copies of your highest diploma transcript',
       documentType: 'transcript',
       field: 'academic_transcript_url'
     },
@@ -1802,6 +2272,14 @@ function DocumentsTab({ studentId, profile, onUpdate, onPassportExtracted }) {
       documentType: 'bank_guarantor_letter',
       field: 'bank_guarantor_letter_url',
       conditional: true // Only required if is_the_bank_guarantee_in_students_name is false
+    },
+    {
+      id: 'acceptance_letter',
+      title: 'Acceptance Letter',
+      icon: '📨',
+      description: 'Upload your university acceptance letter',
+      documentType: 'acceptance_letter',
+      field: 'acceptance_letter_url'
     }
   ]
 
@@ -1840,11 +2318,20 @@ function DocumentsTab({ studentId, profile, onUpdate, onPassportExtracted }) {
       formData.append('file', file)
       formData.append('doc_type', docType.documentType)
       
-      console.log(`🚀 Sending to backend: /verify-document/verify-and-upload`)
+      // Use appropriate endpoint based on admin/partner view mode
+      let endpoint
+      if (adminViewMode && viewingStudentId) {
+        endpoint = `/admin/students/${viewingStudentId}/documents/verify-and-upload`
+      } else if (partnerViewMode && viewingStudentId) {
+        endpoint = `/partners/me/students/${viewingStudentId}/documents/verify-and-upload`
+      } else {
+        endpoint = '/verify-document/verify-and-upload'
+      }
+      
+      console.log(`🚀 Sending to backend: ${endpoint}`)
       console.log(`📋 FormData - doc_type: ${docType.documentType}`)
-
-      // Use verify-and-upload endpoint
-      const response = await api.post('/verify-document/verify-and-upload', formData, {
+      
+      const response = await api.post(endpoint, formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -1928,7 +2415,17 @@ function DocumentsTab({ studentId, profile, onUpdate, onPassportExtracted }) {
     }
 
     try {
-      await api.delete(`/verify-document/student-documents/${documentId}`)
+      // Use appropriate endpoint based on admin/partner view mode
+      let endpoint
+      if (adminViewMode && viewingStudentId) {
+        endpoint = `/admin/students/${viewingStudentId}/documents/${documentId}`
+      } else if (partnerViewMode && viewingStudentId) {
+        endpoint = `/partners/me/students/${viewingStudentId}/documents/${documentId}`
+      } else {
+        endpoint = `/verify-document/student-documents/${documentId}`
+      }
+      
+      await api.delete(endpoint)
       await loadDocuments()
       if (onUpdate) onUpdate()
       alert('Document deleted successfully!')
@@ -2016,6 +2513,21 @@ function DocumentsTab({ studentId, profile, onUpdate, onPassportExtracted }) {
                   {status.uploaded && status.verificationReason && (
                     <p className="text-xs text-gray-600 italic mb-2">{status.verificationReason}</p>
                   )}
+                  {/* Thumbnail for image documents (especially passport photos) */}
+                  {status.uploaded && status.url && (doc.documentType === 'photo' || doc.documentType === 'passport' || doc.documentType === 'passport_page') && (
+                    <div className="mt-2 mb-2">
+                      <img 
+                        src={status.url} 
+                        alt={doc.title}
+                        className="w-24 h-24 object-cover rounded border border-gray-300 cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => window.open(status.url, '_blank')}
+                        onError={(e) => {
+                          // Hide thumbnail if image fails to load
+                          e.target.style.display = 'none'
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="ml-4 flex flex-col gap-2">
                   {status.uploaded ? (
@@ -2061,12 +2573,841 @@ function DocumentsTab({ studentId, profile, onUpdate, onPassportExtracted }) {
   )
 }
 
-// Security Tab Component - Placeholder
-function SecurityTab() {
+// Additional Info Tab Component
+function AdditionalInfoTab({ profile, onUpdate, adminViewMode = false, partnerViewMode = false, viewingStudentId = null }) {
+  const [formData, setFormData] = useState({
+    criminal_record: profile?.criminal_record || false,
+    criminal_record_details: profile?.criminal_record_details || '',
+    financial_supporter: profile?.financial_supporter || {
+      name: '',
+      tel: '',
+      organization: '',
+      address: '',
+      relationship: '',
+      email: ''
+    },
+    guarantor_in_china: profile?.guarantor_in_china || {
+      name: '',
+      phone_number: '',
+      mobile: '',
+      email: '',
+      address: '',
+      organization: ''
+    },
+    social_media_accounts: profile?.social_media_accounts || {
+      facebook: '',
+      linkedin: '',
+      qq: '',
+      skype: '',
+      wechat: '',
+      twitter: '',
+      dingtalk: '',
+      instagram: ''
+    },
+    studied_in_china: profile?.studied_in_china || false,
+    studied_in_china_details: profile?.studied_in_china_details || '',
+    work_experience: profile?.work_experience || false,
+    work_experience_details: profile?.work_experience_details || [],
+    worked_in_china: profile?.worked_in_china || false,
+    worked_in_china_details: profile?.worked_in_china_details || ''
+  })
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const submitData = { ...formData }
+      // Convert empty strings to null for optional fields
+      Object.keys(submitData).forEach(key => {
+        if (submitData[key] === '' || submitData[key] === null) {
+          submitData[key] = null
+        }
+      })
+      
+      // Use admin/partner endpoint if in admin/partner view mode
+      if (adminViewMode && viewingStudentId) {
+        await api.put(`/admin/students/${viewingStudentId}/profile`, submitData)
+      } else if (partnerViewMode && viewingStudentId) {
+        await api.put(`/partners/me/students/${viewingStudentId}/profile`, submitData)
+      } else {
+        await api.put('/students/me', submitData)
+      }
+      onUpdate()
+      alert('Additional information updated successfully!')
+    } catch (error) {
+      console.error('Error updating profile:', error)
+      alert('Failed to update. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const addWorkExperience = () => {
+    setFormData(prev => ({
+      ...prev,
+      work_experience_details: [...(prev.work_experience_details || []), {
+        from: '',
+        to: '',
+        company: '',
+        position: '',
+        country: ''
+      }]
+    }))
+  }
+
+  const removeWorkExperience = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      work_experience_details: prev.work_experience_details.filter((_, i) => i !== index)
+    }))
+  }
+
+  const updateWorkExperience = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      work_experience_details: prev.work_experience_details.map((exp, i) => 
+        i === index ? { ...exp, [field]: value } : exp
+      )
+    }))
+  }
+
   return (
-    <div>
-      <h3 className="text-lg font-semibold text-gray-800 mb-4">Security Settings</h3>
-      <p className="text-gray-600">Security settings will be implemented here.</p>
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Criminal Record Section */}
+      <div className="border-b pb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Criminal Record</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Have you ever had a criminal record? *</label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="criminal_record"
+                  checked={formData.criminal_record === true}
+                  onChange={() => setFormData({...formData, criminal_record: true})}
+                  className="w-4 h-4 text-teal-600"
+                />
+                <span>Yes</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="criminal_record"
+                  checked={formData.criminal_record === false}
+                  onChange={() => setFormData({...formData, criminal_record: false})}
+                  className="w-4 h-4 text-teal-600"
+                />
+                <span>No</span>
+              </label>
+            </div>
+          </div>
+          {formData.criminal_record && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Criminal Record Details</label>
+              <textarea
+                value={formData.criminal_record_details}
+                onChange={(e) => setFormData({...formData, criminal_record_details: e.target.value})}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                rows="3"
+                placeholder="Please provide details"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Financial Supporter Section */}
+      <div className="border-b pb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Financial Supporter</h3>
+        <p className="text-sm text-orange-600 mb-4">(The guarantor should be an adult, willing to sponsor you to complete your studies. He or she may live in or outside China, generally should be parent.)</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Name *</label>
+            <input
+              type="text"
+              value={formData.financial_supporter.name}
+              onChange={(e) => setFormData({...formData, financial_supporter: {...formData.financial_supporter, name: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Tel. *</label>
+            <input
+              type="tel"
+              value={formData.financial_supporter.tel}
+              onChange={(e) => setFormData({...formData, financial_supporter: {...formData.financial_supporter, tel: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              placeholder="Example: +86-10-12345678"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Organization *</label>
+            <input
+              type="text"
+              value={formData.financial_supporter.organization}
+              onChange={(e) => setFormData({...formData, financial_supporter: {...formData.financial_supporter, organization: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+            <input
+              type="text"
+              value={formData.financial_supporter.address}
+              onChange={(e) => setFormData({...formData, financial_supporter: {...formData.financial_supporter, address: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Relationship with applicant</label>
+            <input
+              type="text"
+              value={formData.financial_supporter.relationship}
+              onChange={(e) => setFormData({...formData, financial_supporter: {...formData.financial_supporter, relationship: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              placeholder="e.g., Father, Mother, Brother"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+            <input
+              type="email"
+              value={formData.financial_supporter.email}
+              onChange={(e) => setFormData({...formData, financial_supporter: {...formData.financial_supporter, email: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Guarantor in China Section */}
+      <div className="border-b pb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Guarantor in China</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Name *</label>
+            <input
+              type="text"
+              value={formData.guarantor_in_china.name}
+              onChange={(e) => setFormData({...formData, guarantor_in_china: {...formData.guarantor_in_china, name: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
+            <input
+              type="tel"
+              value={formData.guarantor_in_china.phone_number}
+              onChange={(e) => setFormData({...formData, guarantor_in_china: {...formData.guarantor_in_china, phone_number: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              placeholder="Example: +86-10-12345678"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Mobile *</label>
+            <input
+              type="tel"
+              value={formData.guarantor_in_china.mobile}
+              onChange={(e) => setFormData({...formData, guarantor_in_china: {...formData.guarantor_in_china, mobile: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              placeholder="Example: +86-13612345678"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+            <input
+              type="email"
+              value={formData.guarantor_in_china.email}
+              onChange={(e) => setFormData({...formData, guarantor_in_china: {...formData.guarantor_in_china, email: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Address *</label>
+            <input
+              type="text"
+              value={formData.guarantor_in_china.address}
+              onChange={(e) => setFormData({...formData, guarantor_in_china: {...formData.guarantor_in_china, address: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Organization</label>
+            <input
+              type="text"
+              value={formData.guarantor_in_china.organization}
+              onChange={(e) => setFormData({...formData, guarantor_in_china: {...formData.guarantor_in_china, organization: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Social Media Accounts Section */}
+      <div className="border-b pb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Social Media Accounts</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Facebook Account</label>
+            <input
+              type="text"
+              value={formData.social_media_accounts.facebook}
+              onChange={(e) => setFormData({...formData, social_media_accounts: {...formData.social_media_accounts, facebook: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">WeChat</label>
+            <input
+              type="text"
+              value={formData.social_media_accounts.wechat}
+              onChange={(e) => setFormData({...formData, social_media_accounts: {...formData.social_media_accounts, wechat: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">LinkedIn Account</label>
+            <input
+              type="text"
+              value={formData.social_media_accounts.linkedin}
+              onChange={(e) => setFormData({...formData, social_media_accounts: {...formData.social_media_accounts, linkedin: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Twitter Account</label>
+            <input
+              type="text"
+              value={formData.social_media_accounts.twitter}
+              onChange={(e) => setFormData({...formData, social_media_accounts: {...formData.social_media_accounts, twitter: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">QQ</label>
+            <input
+              type="text"
+              value={formData.social_media_accounts.qq}
+              onChange={(e) => setFormData({...formData, social_media_accounts: {...formData.social_media_accounts, qq: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">DingTalk</label>
+            <input
+              type="text"
+              value={formData.social_media_accounts.dingtalk}
+              onChange={(e) => setFormData({...formData, social_media_accounts: {...formData.social_media_accounts, dingtalk: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Skype</label>
+            <input
+              type="text"
+              value={formData.social_media_accounts.skype}
+              onChange={(e) => setFormData({...formData, social_media_accounts: {...formData.social_media_accounts, skype: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Instagram</label>
+            <input
+              type="text"
+              value={formData.social_media_accounts.instagram}
+              onChange={(e) => setFormData({...formData, social_media_accounts: {...formData.social_media_accounts, instagram: e.target.value}})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Study in China Section */}
+      <div className="border-b pb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Study Background</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Have you ever studied online or offline at any institution in China? *</label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="studied_in_china"
+                  checked={formData.studied_in_china === true}
+                  onChange={() => setFormData({...formData, studied_in_china: true})}
+                  className="w-4 h-4 text-teal-600"
+                />
+                <span>Yes</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="studied_in_china"
+                  checked={formData.studied_in_china === false}
+                  onChange={() => setFormData({...formData, studied_in_china: false})}
+                  className="w-4 h-4 text-teal-600"
+                />
+                <span>No</span>
+              </label>
+            </div>
+          </div>
+          {formData.studied_in_china && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Study Details</label>
+              <textarea
+                value={formData.studied_in_china_details}
+                onChange={(e) => setFormData({...formData, studied_in_china_details: e.target.value})}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                rows="3"
+                placeholder="Please provide details about your study in China"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Employment Background Section */}
+      <div className="border-b pb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Employment Background</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Do you have work experience? *</label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="work_experience"
+                  checked={formData.work_experience === true}
+                  onChange={() => setFormData({...formData, work_experience: true})}
+                  className="w-4 h-4 text-teal-600"
+                />
+                <span>Yes</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="work_experience"
+                  checked={formData.work_experience === false}
+                  onChange={() => setFormData({...formData, work_experience: false})}
+                  className="w-4 h-4 text-teal-600"
+                />
+                <span>No</span>
+              </label>
+            </div>
+          </div>
+          {formData.work_experience && (
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <label className="block text-sm font-medium text-gray-700">Work Experience Details</label>
+                <button
+                  type="button"
+                  onClick={addWorkExperience}
+                  className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 text-sm"
+                >
+                  Add Work Experience
+                </button>
+              </div>
+              {formData.work_experience_details && formData.work_experience_details.map((exp, index) => (
+                <div key={index} className="border p-4 rounded-lg mb-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="font-medium text-gray-700">Work Experience #{index + 1}</h4>
+                    <button
+                      type="button"
+                      onClick={() => removeWorkExperience(index)}
+                      className="text-red-600 hover:text-red-800 text-sm"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">From</label>
+                      <input
+                        type="date"
+                        value={exp.from}
+                        onChange={(e) => updateWorkExperience(index, 'from', e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">To</label>
+                      <input
+                        type="date"
+                        value={exp.to}
+                        onChange={(e) => updateWorkExperience(index, 'to', e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Company</label>
+                      <input
+                        type="text"
+                        value={exp.company}
+                        onChange={(e) => updateWorkExperience(index, 'company', e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Position</label>
+                      <input
+                        type="text"
+                        value={exp.position}
+                        onChange={(e) => updateWorkExperience(index, 'position', e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Country</label>
+                      <input
+                        type="text"
+                        value={exp.country}
+                        onChange={(e) => updateWorkExperience(index, 'country', e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Have you ever worked in China? *</label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="worked_in_china"
+                  checked={formData.worked_in_china === true}
+                  onChange={() => setFormData({...formData, worked_in_china: true})}
+                  className="w-4 h-4 text-teal-600"
+                />
+                <span>Yes</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="worked_in_china"
+                  checked={formData.worked_in_china === false}
+                  onChange={() => setFormData({...formData, worked_in_china: false})}
+                  className="w-4 h-4 text-teal-600"
+                />
+                <span>No</span>
+              </label>
+            </div>
+          </div>
+          {formData.worked_in_china && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Work in China Details</label>
+              <textarea
+                value={formData.worked_in_china_details}
+                onChange={(e) => setFormData({...formData, worked_in_china_details: e.target.value})}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                rows="3"
+                placeholder="Please provide details about your work experience in China"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <button
+        type="submit"
+        disabled={saving}
+        className="bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
+      >
+        {saving ? 'Saving...' : 'Save Changes'}
+      </button>
+    </form>
+  )
+}
+
+// Security Tab Component
+function SecurityTab({ adminViewMode = false, partnerViewMode = false, viewingStudentId = null }) {
+  const { user } = useAuthStore()
+  const [passwordInfo, setPasswordInfo] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [showUpdateForm, setShowUpdateForm] = useState(false)
+  const [formData, setFormData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  })
+  const [updating, setUpdating] = useState(false)
+
+  useEffect(() => {
+    loadPasswordInfo()
+  }, [adminViewMode, partnerViewMode, viewingStudentId])
+
+  const loadPasswordInfo = async () => {
+    setLoading(true)
+    try {
+      if (adminViewMode && viewingStudentId) {
+        // Admin viewing student - use admin endpoint
+        const response = await api.get(`/admin/students/${viewingStudentId}/password`)
+        // Response should have: email, has_password, note, student_id
+        if (response.data) {
+          // Remove the standard backend note - we don't need to show it
+          const passwordData = {
+            ...response.data,
+            note: undefined // Don't show the standard backend note
+          }
+          setPasswordInfo(passwordData)
+        } else {
+          throw new Error('No data in response')
+        }
+      } else if (partnerViewMode && viewingStudentId) {
+        // Partner viewing student - use partner endpoint
+        const response = await api.get(`/partners/me/students/${viewingStudentId}/password`)
+        // Response should have: email, has_password, note, student_id
+        if (response.data) {
+          // Remove the standard backend note - we don't need to show it
+          const passwordData = {
+            ...response.data,
+            note: undefined // Don't show the standard backend note
+          }
+          setPasswordInfo(passwordData)
+        } else {
+          throw new Error('No data in response')
+        }
+      } else {
+        // Student viewing own profile - get student ID first
+        try {
+          const profileResponse = await api.get('/students/me')
+          if (profileResponse.data?.id) {
+            const response = await api.get(`/admin/students/${profileResponse.data.id}/password`)
+            if (response.data) {
+              const passwordData = {
+                ...response.data,
+                note: undefined // Don't show the standard backend note
+              }
+              setPasswordInfo(passwordData)
+            } else {
+              throw new Error('No data in response')
+            }
+          } else {
+            // Fallback: assume password exists if user is authenticated
+            setPasswordInfo({
+              has_password: true,
+              email: user?.email,
+              note: undefined
+            })
+          }
+        } catch (e) {
+          console.error('Error loading password info for student:', e)
+          // If admin endpoint fails, show error
+          setPasswordInfo({
+            has_password: true,
+            email: user?.email,
+            note: "Unable to load password status. You can still update your password below."
+          })
+        }
+      }
+    } catch (error) {
+      console.error('Error loading password info:', error)
+      // Only show error if we don't have valid data
+      setPasswordInfo({
+        has_password: true,
+        email: error.response?.data?.email || user?.email || 'N/A',
+        note: "Unable to load password status. You can still update your password below."
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault()
+    
+    if (formData.newPassword !== formData.confirmPassword) {
+      alert('New password and confirm password do not match')
+      return
+    }
+    
+    if (formData.newPassword.length < 6) {
+      alert('Password must be at least 6 characters long')
+      return
+    }
+
+    setUpdating(true)
+    try {
+      if (adminViewMode && viewingStudentId) {
+        // Admin updating student password - no need for current password
+        await api.post(`/admin/students/${viewingStudentId}/set-password`, {
+          password: formData.newPassword
+        })
+        alert('Password updated successfully!')
+      } else if (partnerViewMode && viewingStudentId) {
+        // Partner updating student password - no need for current password
+        await api.post(`/partners/me/students/${viewingStudentId}/set-password`, {
+          password: formData.newPassword
+        })
+        alert('Password updated successfully!')
+      } else {
+        // Student updating own password - we need a student endpoint
+        // For now, we'll use the admin endpoint if available
+        // But ideally, we should have a /students/me/password endpoint
+        try {
+          const profileResponse = await api.get('/students/me')
+          if (profileResponse.data?.id) {
+            await api.post(`/admin/students/${profileResponse.data.id}/set-password`, {
+              password: formData.newPassword
+            })
+            alert('Password updated successfully!')
+          } else {
+            alert('Unable to update password. Please contact support.')
+          }
+        } catch (e) {
+          alert('Unable to update password. Please contact support.')
+        }
+      }
+      
+      // Reset form
+      setFormData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      })
+      setShowUpdateForm(false)
+      await loadPasswordInfo()
+    } catch (error) {
+      console.error('Error updating password:', error)
+      alert(error.response?.data?.detail || 'Failed to update password. Please try again.')
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Password Management</h3>
+        
+        {/* Password Status */}
+        <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h4 className="font-medium text-gray-900 mb-1">Password Status</h4>
+              <p className="text-sm text-gray-600">{passwordInfo?.email || user?.email || 'N/A'}</p>
+            </div>
+            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+              passwordInfo?.has_password 
+                ? 'bg-green-100 text-green-800' 
+                : 'bg-yellow-100 text-yellow-800'
+            }`}>
+              {passwordInfo?.has_password ? 'Password Set' : 'No Password'}
+            </div>
+            </div>
+            {/* Only show error messages, hide standard backend notes */}
+            {passwordInfo?.note && passwordInfo.note.includes("Unable to load") && (
+              <p className="text-sm text-yellow-600 italic mt-2">{passwordInfo.note}</p>
+            )}
+          </div>
+
+        {/* Update Password Form */}
+        {!showUpdateForm ? (
+          <button
+            onClick={() => setShowUpdateForm(true)}
+            className="bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700 transition-colors"
+          >
+            {(adminViewMode || partnerViewMode) ? 'Set/Update Password' : 'Update Password'}
+          </button>
+        ) : (
+          <form onSubmit={handleUpdatePassword} className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
+            <h4 className="font-medium text-gray-900 mb-4">
+              {(adminViewMode || partnerViewMode) ? 'Set/Update Student Password' : 'Update Your Password'}
+            </h4>
+            
+            {!(adminViewMode || partnerViewMode) && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Current Password</label>
+                <input
+                  type="password"
+                  value={formData.currentPassword}
+                  onChange={(e) => setFormData({...formData, currentPassword: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  placeholder="Enter current password"
+                  required={!adminViewMode}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {(adminViewMode || partnerViewMode) ? 'Admin/Partner can set password without current password' : 'Required to verify your identity'}
+                </p>
+              </div>
+            )}
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">New Password</label>
+              <input
+                type="password"
+                value={formData.newPassword}
+                onChange={(e) => setFormData({...formData, newPassword: e.target.value})}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                placeholder="Enter new password (minimum 6 characters)"
+                required
+                minLength={6}
+              />
+              <p className="text-xs text-gray-500 mt-1">Password must be at least 6 characters long</p>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Confirm New Password</label>
+              <input
+                type="password"
+                value={formData.confirmPassword}
+                onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                placeholder="Confirm new password"
+                required
+                minLength={6}
+              />
+              {formData.newPassword && formData.confirmPassword && formData.newPassword !== formData.confirmPassword && (
+                <p className="text-xs text-red-500 mt-1">Passwords do not match</p>
+              )}
+            </div>
+            
+            <div className="flex gap-3 pt-4">
+              <button
+                type="submit"
+                disabled={updating || (formData.newPassword && formData.newPassword !== formData.confirmPassword)}
+                className="flex-1 bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
+              >
+                {updating ? 'Updating...' : 'Update Password'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUpdateForm(false)
+                  setFormData({
+                    currentPassword: '',
+                    newPassword: '',
+                    confirmPassword: ''
+                  })
+                }}
+                className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
     </div>
   )
 }

@@ -22,6 +22,8 @@ export default function LoginPage() {
     if (isAuthenticated) {
       if (user?.role === 'admin') {
         navigate('/admin', { replace: true })
+      } else if (user?.role === 'partner') {
+        navigate('/partner', { replace: true })
       } else if (user?.role === 'student') {
         navigate('/dashboard', { replace: true })
       } else {
@@ -54,6 +56,8 @@ export default function LoginPage() {
         const userRole = result.user?.role
         if (userRole === 'admin') {
           navigate('/admin')
+        } else if (userRole === 'partner') {
+          navigate('/partner')
         } else if (userRole === 'student') {
           navigate('/dashboard')
         } else {
