@@ -234,6 +234,7 @@ export default function MajorsTable({ universities, onUpdate }) {
               <label className="block text-sm font-medium text-gray-700 mb-1">Degree Level *</label>
               <select value={majorForm.degree_level} onChange={(e) => setMajorForm({...majorForm, degree_level: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" required>
                 <option value="">Select Degree Level</option>
+                <option value="Language Program">Language Program</option>
                 <option value="Junior high">Junior high</option>
                 <option value="Senior high">Senior high</option>
                 <option value="Non Degree">Non Degree</option>
