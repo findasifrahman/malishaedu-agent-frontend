@@ -109,6 +109,7 @@ export default function AdminDashboard() {
   // Document Import state
   const [documentImportFile, setDocumentImportFile] = useState(null)
   const [generatedSQL, setGeneratedSQL] = useState('')
+  const [manualSQL, setManualSQL] = useState('')
   const [sqlValidation, setSqlValidation] = useState(null)
   const [documentTextPreview, setDocumentTextPreview] = useState('')
   const [executingSQL, setExecutingSQL] = useState(false)
@@ -1719,8 +1720,10 @@ export default function AdminDashboard() {
     }
   }
   
-  const handleExecuteSQL = async () => {
-    if (!generatedSQL.trim()) {
+  const handleExecuteSQL = async (sqlToExecute = null) => {
+    const sql = sqlToExecute || generatedSQL || manualSQL
+    
+    if (!sql.trim()) {
       alert('No SQL to execute')
       return
     }
@@ -1732,9 +1735,10 @@ export default function AdminDashboard() {
     setExecutingSQL(true)
     try {
       const response = await api.post('/admin/document-import/execute-sql', {
-        sql: generatedSQL
+        sql: sql
       })
       
+      console.log('SQL Execution Response:', response.data)
       setSqlExecutionResult(response.data)
       
       if (response.data.summary) {
@@ -1744,8 +1748,13 @@ export default function AdminDashboard() {
         if (errors.length > 0) {
           alert(`SQL executed with errors:\n${errors.join('\n')}`)
         } else {
-          alert(`SQL executed successfully!\n\nInserted: ${summary.majors_inserted || 0} majors, ${summary.program_intakes_inserted || 0} intakes\nUpdated: ${summary.majors_updated || 0} majors, ${summary.program_intakes_updated || 0} intakes`)
+          const msg = `SQL executed successfully!\n\n` +
+            `Inserted: ${summary.majors_inserted || 0} majors, ${summary.program_intakes_inserted || 0} intakes, ${summary.documents_inserted || 0} documents, ${summary.scholarships_inserted || 0} scholarships, ${summary.links_inserted || 0} links\n` +
+            `Updated: ${summary.majors_updated || 0} majors, ${summary.program_intakes_updated || 0} intakes, ${summary.documents_updated || 0} documents`
+          alert(msg)
         }
+      } else {
+        alert('SQL executed, but no summary returned. Check the execution result below.')
       }
       
       // Reload relevant data
@@ -1756,6 +1765,10 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Error executing SQL:', error)
       alert(error.response?.data?.detail || 'Failed to execute SQL')
+      setSqlExecutionResult({
+        success: false,
+        error: error.response?.data?.detail || error.message
+      })
     } finally {
       setExecutingSQL(false)
     }
@@ -4302,12 +4315,57 @@ export default function AdminDashboard() {
                     </div>
                   )}
                   
+                  {/* Manual SQL Paste Field */}
+                  <div className="mt-6 border-t border-gray-200 pt-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Manual SQL Execution</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Paste SQL Script
+                        </label>
+                        <textarea
+                          value={manualSQL}
+                          onChange={(e) => setManualSQL(e.target.value)}
+                          placeholder="Paste your SQL script here..."
+                          className="w-full h-48 border border-gray-300 rounded-lg p-3 font-mono text-sm"
+                        />
+                      </div>
+                      <button
+                        onClick={() => handleExecuteSQL(manualSQL)}
+                        disabled={!manualSQL.trim() || executingSQL}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        {executingSQL ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Executing...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4" />
+                            Execute Manual SQL
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  
                   {sqlExecutionResult && (
                     <div className="mt-4">
                       <h3 className="text-sm font-semibold text-gray-700 mb-2">Execution Result</h3>
-                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                        {sqlExecutionResult.summary && (
-                          <div className="space-y-2 text-sm">
+                      <div className={`border rounded-lg p-4 ${
+                        sqlExecutionResult.success === false 
+                          ? 'bg-red-50 border-red-200' 
+                          : sqlExecutionResult.summary?.errors?.length > 0
+                          ? 'bg-yellow-50 border-yellow-200'
+                          : 'bg-green-50 border-green-200'
+                      }`}>
+                        {sqlExecutionResult.error ? (
+                          <div className="text-red-700">
+                            <span className="font-medium">Error:</span> {sqlExecutionResult.error}
+                          </div>
+                        ) : sqlExecutionResult.summary ? (
+                          <div className="space-y-3 text-sm">
                             <div className="grid grid-cols-2 gap-4">
                               <div>
                                 <span className="font-medium">Majors:</span> {sqlExecutionResult.summary.majors_inserted || 0} inserted, {sqlExecutionResult.summary.majors_updated || 0} updated
@@ -4321,8 +4379,11 @@ export default function AdminDashboard() {
                               <div>
                                 <span className="font-medium">Scholarships:</span> {sqlExecutionResult.summary.scholarships_inserted || 0} inserted, {sqlExecutionResult.summary.scholarships_updated || 0} updated
                               </div>
+                              <div>
+                                <span className="font-medium">Links:</span> {sqlExecutionResult.summary.links_inserted || 0} inserted
+                              </div>
                             </div>
-                            {sqlExecutionResult.summary.errors && sqlExecutionResult.summary.errors.length > 0 && (
+                            {sqlExecutionResult.summary.errors && Array.isArray(sqlExecutionResult.summary.errors) && sqlExecutionResult.summary.errors.length > 0 && (
                               <div className="mt-4">
                                 <span className="font-medium text-red-700">Errors:</span>
                                 <ul className="list-disc list-inside text-red-600 space-y-1 mt-1">
@@ -4331,6 +4392,20 @@ export default function AdminDashboard() {
                                   ))}
                                 </ul>
                               </div>
+                            )}
+                            {(!sqlExecutionResult.summary.errors || sqlExecutionResult.summary.errors.length === 0) && (
+                              <div className="mt-2 text-green-700 font-medium">
+                                ✓ All operations completed successfully
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-gray-600">
+                            SQL executed, but no summary data returned. Check the results array below.
+                            {sqlExecutionResult.results && (
+                              <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto">
+                                {JSON.stringify(sqlExecutionResult.results, null, 2)}
+                              </pre>
                             )}
                           </div>
                         )}
