@@ -1675,16 +1675,44 @@ export default function AdminDashboard() {
         }
       })
       
+      // Log response for debugging
+      console.log('SQL Generation Response:', {
+        hasSql: !!response.data?.sql,
+        sqlLength: response.data?.sql?.length,
+        hasValidation: !!response.data?.validation,
+        validationValid: response.data?.validation?.valid
+      })
+      
+      // Check if response has required fields
+      if (!response.data) {
+        throw new Error('Empty response from server')
+      }
+      
+      if (!response.data.sql) {
+        throw new Error('No SQL generated in response')
+      }
+      
+      if (!response.data.validation) {
+        throw new Error('No validation data in response')
+      }
+      
       setGeneratedSQL(response.data.sql)
       setSqlValidation(response.data.validation)
-      setDocumentTextPreview(response.data.document_text_preview)
+      setDocumentTextPreview(response.data.document_text_preview || '')
       
       if (!response.data.validation.valid) {
-        alert('SQL validation found errors. Please review the generated SQL carefully.')
+        const errorMsg = response.data.validation.errors?.join('\n') || 'SQL validation found errors'
+        alert(`SQL validation found errors:\n${errorMsg}\n\nPlease review the generated SQL carefully.`)
       }
     } catch (error) {
       console.error('Error generating SQL:', error)
-      alert(error.response?.data?.detail || 'Failed to generate SQL from document')
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      })
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to generate SQL from document'
+      alert(`SQL Generation Failed: ${errorMessage}`)
     } finally {
       setLoading('documentImport', false)
     }
