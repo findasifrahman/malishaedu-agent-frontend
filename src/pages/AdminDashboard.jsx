@@ -1787,14 +1787,28 @@ export default function AdminDashboard() {
   
   const handleExecuteSQL = async (sqlToExecute = null) => {
     // Get SQL from parameter, generatedSQL, or manualSQL
-    let sql = sqlToExecute || generatedSQL || manualSQL || ''
+    // If sqlToExecute is an event object (from onClick), ignore it and use state
+    let sql = null
+    
+    // Check if sqlToExecute is actually a SQL string (longer than 10 chars) or an event object
+    if (sqlToExecute && typeof sqlToExecute === 'string' && sqlToExecute.length > 10) {
+      // It's actually SQL string passed as parameter
+      sql = sqlToExecute
+    } else if (sqlToExecute && typeof sqlToExecute === 'object' && sqlToExecute.target) {
+      // This is an event object from onClick, ignore it
+      console.warn('Received event object, using generatedSQL from state')
+      sql = generatedSQL || manualSQL || ''
+    } else {
+      // Use generatedSQL or manualSQL from state
+      sql = generatedSQL || manualSQL || ''
+    }
     
     // Debug: log what we received
     console.log('handleExecuteSQL called:', {
-      sqlToExecute: sqlToExecute ? typeof sqlToExecute : 'null',
-      generatedSQL: generatedSQL ? typeof generatedSQL : 'null',
-      manualSQL: manualSQL ? typeof manualSQL : 'null',
-      sql: sql ? typeof sql : 'null'
+      sqlToExecute: sqlToExecute ? (typeof sqlToExecute === 'string' ? `string(${sqlToExecute.length})` : typeof sqlToExecute) : 'null',
+      generatedSQL: generatedSQL ? `string(${generatedSQL.length})` : 'null',
+      manualSQL: manualSQL ? `string(${manualSQL.length})` : 'null',
+      sql: sql ? `string(${sql.length})` : 'null'
     })
     
     // Ensure it's a string (handle case where it might be an object)
@@ -1807,17 +1821,20 @@ export default function AdminDashboard() {
         } else if (sql.result && sql.result.sql) {
           sql = sql.result.sql
         } else {
-          sql = String(sql)
+          // Last resort: try to stringify, but this will likely fail
+          console.error('Cannot extract SQL from object:', sql)
+          alert('Invalid SQL format. Please regenerate SQL or paste SQL manually.')
+          return
         }
       } else {
-        sql = String(sql)
+        sql = String(sql || '')
       }
     }
     
     sql = sql.trim()
     
-    if (!sql || sql === 'undefined' || sql === 'null' || sql === '[object Object]') {
-      console.error('Invalid SQL:', sql)
+    if (!sql || sql === 'undefined' || sql === 'null' || sql === '[object Object]' || sql.length < 50) {
+      console.error('Invalid SQL:', { length: sql.length, first100: sql.substring(0, 100) })
       alert('No valid SQL to execute. Please regenerate SQL or paste SQL manually.')
       return
     }
@@ -4402,7 +4419,7 @@ export default function AdminDashboard() {
                       
                       <div className="mt-4 flex gap-2">
                         <button
-                          onClick={handleExecuteSQL}
+                          onClick={() => handleExecuteSQL()}
                           disabled={executingSQL || !sqlValidation?.valid}
                           className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                         >
