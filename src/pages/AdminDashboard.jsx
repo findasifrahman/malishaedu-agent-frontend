@@ -1666,7 +1666,18 @@ export default function AdminDashboard() {
       return
     }
     
+    // Prevent multiple clicks
+    if (loadingStates.documentImport) {
+      console.log('SQL generation already in progress, ignoring click')
+      return
+    }
+    
+    console.log('Setting loading state to true')
     setLoading('documentImport', true)
+    setSqlGenerationProgress('Starting...')
+    setGeneratedSQL('') // Clear previous SQL
+    setSqlValidation(null)
+    
     try {
       const formData = new FormData()
       formData.append('file', documentImportFile)
@@ -4348,12 +4359,12 @@ export default function AdminDashboard() {
                     {loadingStates.documentImport ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        {sqlGenerationProgress || 'Generating SQL...'}
+                        <span>{sqlGenerationProgress || 'Generating SQL...'}</span>
                       </>
                     ) : (
                       <>
                         <Upload className="w-4 h-4" />
-                        Generate SQL
+                        <span>Generate SQL</span>
                       </>
                     )}
                   </button>
