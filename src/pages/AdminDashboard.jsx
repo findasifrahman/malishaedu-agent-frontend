@@ -1703,17 +1703,36 @@ export default function AdminDashboard() {
               throw new Error('Job completed but no result returned')
             }
             
-            // Ensure SQL is a string
-            const sqlString = typeof job.result.sql === 'string' 
-              ? job.result.sql 
-              : String(job.result.sql || '')
+            // Ensure SQL is a string (handle edge cases)
+            let sqlString = job.result.sql
             
-            if (!sqlString || sqlString === 'undefined' || sqlString === 'null') {
+            // Handle various possible formats
+            if (typeof sqlString !== 'string') {
+              if (sqlString && typeof sqlString === 'object') {
+                // If it's an object, try to extract the SQL
+                if (sqlString.sql) {
+                  sqlString = sqlString.sql
+                } else {
+                  sqlString = String(sqlString)
+                }
+              } else {
+                sqlString = String(sqlString || '')
+              }
+            }
+            
+            // Validate SQL string
+            if (!sqlString || sqlString === 'undefined' || sqlString === 'null' || sqlString === '[object Object]') {
               throw new Error('Invalid SQL in result: SQL is not a valid string')
             }
             
+            // Additional validation: SQL should be reasonably long
+            if (sqlString.length < 100) {
+              console.warn('SQL seems too short:', sqlString)
+              throw new Error('Generated SQL appears to be invalid (too short). Please try again.')
+            }
+            
             // Debug: log what we're storing
-            console.log('Storing SQL:', {
+            console.log('✅ Storing SQL:', {
               type: typeof sqlString,
               length: sqlString.length,
               first100: sqlString.substring(0, 100)
@@ -1812,6 +1831,28 @@ export default function AdminDashboard() {
     
     setExecutingSQL(true)
     try {
+      // Final validation: ensure SQL is a string before sending
+      if (typeof sql !== 'string') {
+        console.error('SQL is still not a string before sending:', typeof sql, sql)
+        alert('Invalid SQL format. Please regenerate SQL or paste SQL manually.')
+        setExecutingSQL(false)
+        return
+      }
+      
+      // Double-check it's not the object string
+      if (sql === '[object Object]' || sql.length < 50) {
+        console.error('SQL appears to be invalid:', sql.substring(0, 100))
+        alert('SQL appears to be invalid. Please regenerate SQL or paste SQL manually.')
+        setExecutingSQL(false)
+        return
+      }
+      
+      console.log('Sending SQL to backend:', {
+        type: typeof sql,
+        length: sql.length,
+        first100: sql.substring(0, 100)
+      })
+      
       const response = await api.post('/admin/document-import/execute-sql', {
         sql: sql
       })
