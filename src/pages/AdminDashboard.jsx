@@ -114,6 +114,7 @@ export default function AdminDashboard() {
   const [documentTextPreview, setDocumentTextPreview] = useState('')
   const [executingSQL, setExecutingSQL] = useState(false)
   const [sqlExecutionResult, setSqlExecutionResult] = useState(null)
+  const [sqlGenerationProgress, setSqlGenerationProgress] = useState('')
   
   // Form states
   const [showUniversityForm, setShowUniversityForm] = useState(false)
@@ -1670,51 +1671,80 @@ export default function AdminDashboard() {
       const formData = new FormData()
       formData.append('file', documentImportFile)
       
-      const response = await api.post('/admin/document-import/generate-sql', formData, {
+      // Start SQL generation job (returns immediately with job_id)
+      console.log('🚀 Starting SQL generation job...')
+      const startResponse = await api.post('/admin/document-import/generate-sql-start', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         },
-        timeout: 300000 // 5 minutes timeout for SQL generation
+        timeout: 10000 // 10 seconds should be enough to start the job
       })
       
-      // Log response for debugging
-      console.log('SQL Generation Response:', {
-        hasSql: !!response.data?.sql,
-        sqlLength: response.data?.sql?.length,
-        hasValidation: !!response.data?.validation,
-        validationValid: response.data?.validation?.valid
-      })
+      const jobId = startResponse.data.job_id
+      console.log(`✅ Job started: ${jobId}`)
       
-      // Check if response has required fields
-      if (!response.data) {
-        throw new Error('Empty response from server')
-      }
-      
-      if (!response.data.sql) {
-        throw new Error('No SQL generated in response')
-      }
-      
-      if (!response.data.validation) {
-        throw new Error('No validation data in response')
-      }
-      
-      // Ensure SQL is a string
-      const sqlString = typeof response.data.sql === 'string' 
-        ? response.data.sql 
-        : String(response.data.sql || '')
-      
-      if (!sqlString || sqlString === 'undefined' || sqlString === 'null') {
-        throw new Error('Invalid SQL in response: SQL is not a valid string')
-      }
-      
-      setGeneratedSQL(sqlString)
-      setSqlValidation(response.data.validation)
-      setDocumentTextPreview(response.data.document_text_preview || '')
-      
-      if (!response.data.validation.valid) {
-        const errorMsg = response.data.validation.errors?.join('\n') || 'SQL validation found errors'
-        alert(`SQL validation found errors:\n${errorMsg}\n\nPlease review the generated SQL carefully.`)
-      }
+      // Poll for job status every 2 seconds
+      let pollCount = 0
+      const maxPolls = 150 // 5 minutes max (150 * 2 seconds)
+      const pollInterval = setInterval(async () => {
+        pollCount++
+        try {
+          const statusResponse = await api.get(`/admin/document-import/generate-sql-status/${jobId}`)
+          const job = statusResponse.data
+          
+          console.log(`📊 [${pollCount}] Job status: ${job.status}, progress: ${job.progress}`)
+          
+          if (job.status === 'completed') {
+            clearInterval(pollInterval)
+            setLoading('documentImport', false)
+            setSqlGenerationProgress('')
+            
+            if (!job.result) {
+              throw new Error('Job completed but no result returned')
+            }
+            
+            // Ensure SQL is a string
+            const sqlString = typeof job.result.sql === 'string' 
+              ? job.result.sql 
+              : String(job.result.sql || '')
+            
+            if (!sqlString || sqlString === 'undefined' || sqlString === 'null') {
+              throw new Error('Invalid SQL in result: SQL is not a valid string')
+            }
+            
+            setGeneratedSQL(sqlString)
+            setSqlValidation(job.result.validation)
+            setDocumentTextPreview(job.result.document_text_preview || '')
+            
+            if (!job.result.validation.valid) {
+              const errorMsg = job.result.validation.errors?.join('\n') || 'SQL validation found errors'
+              alert(`SQL validation found errors:\n${errorMsg}\n\nPlease review the generated SQL carefully.`)
+            } else {
+              alert('SQL generated successfully!')
+            }
+          } else if (job.status === 'failed') {
+            clearInterval(pollInterval)
+            setLoading('documentImport', false)
+            setSqlGenerationProgress('')
+            const errorMsg = job.error || 'SQL generation failed'
+            alert(`SQL Generation Failed: ${errorMsg}`)
+          } else if (pollCount >= maxPolls) {
+            clearInterval(pollInterval)
+            setLoading('documentImport', false)
+            setSqlGenerationProgress('')
+            alert('SQL generation is taking longer than expected (5 minutes). Please try again or check backend logs.')
+          }
+          // If status is 'processing', continue polling
+        } catch (pollError) {
+          console.error('Error polling job status:', pollError)
+          // Don't clear interval on network errors, keep trying
+          if (pollError.response?.status === 404) {
+            clearInterval(pollInterval)
+            setLoading('documentImport', false)
+            alert('Job not found. Please try again.')
+          }
+        }
+      }, 2000) // Poll every 2 seconds
     } catch (error) {
       console.error('Error generating SQL:', error)
       console.error('Error details:', {
@@ -4237,7 +4267,7 @@ export default function AdminDashboard() {
                     {loadingStates.documentImport ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        Generating SQL...
+                        {sqlGenerationProgress || 'Generating SQL...'}
                       </>
                     ) : (
                       <>
