@@ -49,6 +49,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 300000, // 5 minutes timeout for long operations like SQL generation
 })
 
 // Request interceptor to add token from storage on every request

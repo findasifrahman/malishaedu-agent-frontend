@@ -1672,7 +1672,8 @@ export default function AdminDashboard() {
       const response = await api.post('/admin/document-import/generate-sql', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
-        }
+        },
+        timeout: 300000 // 5 minutes timeout for SQL generation
       })
       
       // Log response for debugging
