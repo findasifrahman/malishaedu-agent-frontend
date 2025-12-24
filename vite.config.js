@@ -11,6 +11,12 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  // Fix for Railway build: use temp directory for cache
+  cacheDir: process.env.RAILWAY_ENVIRONMENT ? '/tmp/.vite' : 'node_modules/.vite',
+  build: {
+    // Clear output directory before build
+    emptyOutDir: true
   }
 })
 
