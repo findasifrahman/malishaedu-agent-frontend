@@ -1712,6 +1712,13 @@ export default function AdminDashboard() {
               throw new Error('Invalid SQL in result: SQL is not a valid string')
             }
             
+            // Debug: log what we're storing
+            console.log('Storing SQL:', {
+              type: typeof sqlString,
+              length: sqlString.length,
+              first100: sqlString.substring(0, 100)
+            })
+            
             setGeneratedSQL(sqlString)
             setSqlValidation(job.result.validation)
             setDocumentTextPreview(job.result.document_text_preview || '')
@@ -1763,11 +1770,26 @@ export default function AdminDashboard() {
     // Get SQL from parameter, generatedSQL, or manualSQL
     let sql = sqlToExecute || generatedSQL || manualSQL || ''
     
+    // Debug: log what we received
+    console.log('handleExecuteSQL called:', {
+      sqlToExecute: sqlToExecute ? typeof sqlToExecute : 'null',
+      generatedSQL: generatedSQL ? typeof generatedSQL : 'null',
+      manualSQL: manualSQL ? typeof manualSQL : 'null',
+      sql: sql ? typeof sql : 'null'
+    })
+    
     // Ensure it's a string (handle case where it might be an object)
     if (typeof sql !== 'string') {
       console.error('SQL is not a string:', sql, typeof sql)
-      if (sql && typeof sql === 'object' && sql.sql) {
-        sql = sql.sql // Handle case where entire response object was stored
+      if (sql && typeof sql === 'object') {
+        // Try to extract SQL from various possible object structures
+        if (sql.sql) {
+          sql = sql.sql
+        } else if (sql.result && sql.result.sql) {
+          sql = sql.result.sql
+        } else {
+          sql = String(sql)
+        }
       } else {
         sql = String(sql)
       }
@@ -1775,8 +1797,9 @@ export default function AdminDashboard() {
     
     sql = sql.trim()
     
-    if (!sql || sql === 'undefined' || sql === 'null') {
-      alert('No SQL to execute')
+    if (!sql || sql === 'undefined' || sql === 'null' || sql === '[object Object]') {
+      console.error('Invalid SQL:', sql)
+      alert('No valid SQL to execute. Please regenerate SQL or paste SQL manually.')
       return
     }
     
