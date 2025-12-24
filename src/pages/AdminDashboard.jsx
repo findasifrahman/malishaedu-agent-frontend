@@ -1698,7 +1698,16 @@ export default function AdminDashboard() {
         throw new Error('No validation data in response')
       }
       
-      setGeneratedSQL(response.data.sql)
+      // Ensure SQL is a string
+      const sqlString = typeof response.data.sql === 'string' 
+        ? response.data.sql 
+        : String(response.data.sql || '')
+      
+      if (!sqlString || sqlString === 'undefined' || sqlString === 'null') {
+        throw new Error('Invalid SQL in response: SQL is not a valid string')
+      }
+      
+      setGeneratedSQL(sqlString)
       setSqlValidation(response.data.validation)
       setDocumentTextPreview(response.data.document_text_preview || '')
       
@@ -1721,12 +1730,28 @@ export default function AdminDashboard() {
   }
   
   const handleExecuteSQL = async (sqlToExecute = null) => {
-    const sql = String(sqlToExecute || generatedSQL || manualSQL || '').trim()
+    // Get SQL from parameter, generatedSQL, or manualSQL
+    let sql = sqlToExecute || generatedSQL || manualSQL || ''
     
-    if (!sql) {
+    // Ensure it's a string (handle case where it might be an object)
+    if (typeof sql !== 'string') {
+      console.error('SQL is not a string:', sql, typeof sql)
+      if (sql && typeof sql === 'object' && sql.sql) {
+        sql = sql.sql // Handle case where entire response object was stored
+      } else {
+        sql = String(sql)
+      }
+    }
+    
+    sql = sql.trim()
+    
+    if (!sql || sql === 'undefined' || sql === 'null') {
       alert('No SQL to execute')
       return
     }
+    
+    // Debug: log what we're sending
+    console.log('Executing SQL (length):', sql.length, 'First 100 chars:', sql.substring(0, 100))
     
     if (!confirm('Are you sure you want to execute this SQL? This will modify the database.')) {
       return
