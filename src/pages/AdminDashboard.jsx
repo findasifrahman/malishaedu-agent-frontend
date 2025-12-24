@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { BarChart3, Users, FileText, MessageSquare, Settings, Upload, MessageCircle, Bot, User as UserIcon, Building2, GraduationCap, Calendar, Plus, Edit, Trash2, X, Play, Loader2, Lock, ChevronDown, ChevronUp } from 'lucide-react'
+import { BarChart3, Users, FileText, MessageSquare, Settings, Upload, MessageCircle, Bot, User as UserIcon, Building2, GraduationCap, Calendar, Plus, Edit, Trash2, X, Play, Loader2, Lock, ChevronDown, ChevronUp, Check } from 'lucide-react'
 import api from '../services/api'
 import { useAuthStore } from '../store/authStore'
 import ReactMarkdown from 'react-markdown'
@@ -106,12 +106,18 @@ export default function AdminDashboard() {
   const [automationRunning, setAutomationRunning] = useState(false)
   const [automationResult, setAutomationResult] = useState(null)
   
-  // Document Import state
+  // Document Import state (NEW - Production-Safe Pipeline)
   const [documentImportFile, setDocumentImportFile] = useState(null)
+  const [extractedData, setExtractedData] = useState(null)
+  const [extractionProgress, setExtractionProgress] = useState('')
+  const [ingestingData, setIngestingData] = useState(false)
+  const [ingestionResult, setIngestionResult] = useState(null)
+  const [documentTextPreview, setDocumentTextPreview] = useState('')
+  
+  // Legacy SQL state (DEPRECATED - kept for backward compatibility)
   const [generatedSQL, setGeneratedSQL] = useState('')
   const [manualSQL, setManualSQL] = useState('')
   const [sqlValidation, setSqlValidation] = useState(null)
-  const [documentTextPreview, setDocumentTextPreview] = useState('')
   const [executingSQL, setExecutingSQL] = useState(false)
   const [sqlExecutionResult, setSqlExecutionResult] = useState(null)
   const [sqlGenerationProgress, setSqlGenerationProgress] = useState('')
@@ -1660,6 +1666,7 @@ export default function AdminDashboard() {
     setShowPartnerForm(true)
   }
   
+  // NEW: Production-Safe Data Extraction Handler
   const handleDocumentImport = async () => {
     if (!documentImportFile) {
       alert('Please select a document file')
@@ -1668,27 +1675,27 @@ export default function AdminDashboard() {
     
     // Prevent multiple clicks
     if (loadingStates.documentImport) {
-      console.log('SQL generation already in progress, ignoring click')
+      console.log('Data extraction already in progress, ignoring click')
       return
     }
     
     console.log('Setting loading state to true')
     setLoading('documentImport', true)
-    setSqlGenerationProgress('Starting...')
-    setGeneratedSQL('') // Clear previous SQL
-    setSqlValidation(null)
+    setExtractionProgress('Starting...')
+    setExtractedData(null) // Clear previous data
+    setIngestionResult(null)
     
     try {
       const formData = new FormData()
       formData.append('file', documentImportFile)
       
-      // Start SQL generation job (returns immediately with job_id)
-      console.log('🚀 Starting SQL generation job...')
-      const startResponse = await api.post('/admin/document-import/generate-sql-start', formData, {
+      // Start data extraction job (returns immediately with job_id)
+      console.log('🚀 Starting data extraction job...')
+      const startResponse = await api.post('/admin/document-import/extract-data-start', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         },
-        timeout: 10000 // 10 seconds should be enough to start the job
+        timeout: 60000 // 60 seconds for file upload and job start (file upload can take time for large files)
       })
       
       const jobId = startResponse.data.job_id
@@ -1700,76 +1707,52 @@ export default function AdminDashboard() {
       const pollInterval = setInterval(async () => {
         pollCount++
         try {
-          const statusResponse = await api.get(`/admin/document-import/generate-sql-status/${jobId}`)
+          const statusResponse = await api.get(`/admin/document-import/extract-data-status/${jobId}`)
           const job = statusResponse.data
           
           console.log(`📊 [${pollCount}] Job status: ${job.status}, progress: ${job.progress}`)
+          setExtractionProgress(job.progress || 'Processing...')
           
           if (job.status === 'completed') {
             clearInterval(pollInterval)
             setLoading('documentImport', false)
-            setSqlGenerationProgress('')
+            setExtractionProgress('')
             
             if (!job.result) {
               throw new Error('Job completed but no result returned')
             }
             
-            // Ensure SQL is a string (handle edge cases)
-            let sqlString = job.result.sql
-            
-            // Handle various possible formats
-            if (typeof sqlString !== 'string') {
-              if (sqlString && typeof sqlString === 'object') {
-                // If it's an object, try to extract the SQL
-                if (sqlString.sql) {
-                  sqlString = sqlString.sql
-                } else {
-                  sqlString = String(sqlString)
-                }
-              } else {
-                sqlString = String(sqlString || '')
-              }
+            const extracted = job.result.extracted_data
+            if (!extracted) {
+              throw new Error('No extracted data in result')
             }
             
-            // Validate SQL string
-            if (!sqlString || sqlString === 'undefined' || sqlString === 'null' || sqlString === '[object Object]') {
-              throw new Error('Invalid SQL in result: SQL is not a valid string')
-            }
-            
-            // Additional validation: SQL should be reasonably long
-            if (sqlString.length < 100) {
-              console.warn('SQL seems too short:', sqlString)
-              throw new Error('Generated SQL appears to be invalid (too short). Please try again.')
-            }
-            
-            // Debug: log what we're storing
-            console.log('✅ Storing SQL:', {
-              type: typeof sqlString,
-              length: sqlString.length,
-              first100: sqlString.substring(0, 100)
+            console.log('✅ Data extracted successfully:', {
+              university: extracted.university_name,
+              majors: extracted.majors?.length || 0,
+              errors: extracted.errors?.length || 0
             })
             
-            setGeneratedSQL(sqlString)
-            setSqlValidation(job.result.validation)
+            setExtractedData(extracted)
             setDocumentTextPreview(job.result.document_text_preview || '')
             
-            if (!job.result.validation.valid) {
-              const errorMsg = job.result.validation.errors?.join('\n') || 'SQL validation found errors'
-              alert(`SQL validation found errors:\n${errorMsg}\n\nPlease review the generated SQL carefully.`)
+            // Show errors if any
+            if (extracted.errors && extracted.errors.length > 0) {
+              alert(`Data extraction completed with warnings:\n${extracted.errors.join('\n')}\n\nPlease review the extracted data before ingesting.`)
             } else {
-              alert('SQL generated successfully!')
+              alert('Data extracted successfully! Please review and click "Ingest Data" to commit to database.')
             }
           } else if (job.status === 'failed') {
             clearInterval(pollInterval)
             setLoading('documentImport', false)
-            setSqlGenerationProgress('')
-            const errorMsg = job.error || 'SQL generation failed'
-            alert(`SQL Generation Failed: ${errorMsg}`)
+            setExtractionProgress('')
+            const errorMsg = job.error || 'Data extraction failed'
+            alert(`Data Extraction Failed: ${errorMsg}`)
           } else if (pollCount >= maxPolls) {
             clearInterval(pollInterval)
             setLoading('documentImport', false)
-            setSqlGenerationProgress('')
-            alert('SQL generation is taking longer than expected (5 minutes). Please try again or check backend logs.')
+            setExtractionProgress('')
+            alert('Data extraction is taking longer than expected (5 minutes). Please try again or check backend logs.')
           }
           // If status is 'processing', continue polling
         } catch (pollError) {
@@ -1783,16 +1766,69 @@ export default function AdminDashboard() {
         }
       }, 2000) // Poll every 2 seconds
     } catch (error) {
-      console.error('Error generating SQL:', error)
+      console.error('Error extracting data:', error)
       console.error('Error details:', {
         message: error.message,
         response: error.response?.data,
         status: error.response?.status
       })
-      const errorMessage = error.response?.data?.detail || error.message || 'Failed to generate SQL from document'
-      alert(`SQL Generation Failed: ${errorMessage}`)
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to extract data from document'
+      alert(`Data Extraction Failed: ${errorMessage}`)
     } finally {
       setLoading('documentImport', false)
+    }
+  }
+  
+  // NEW: Ingest extracted data into database
+  const handleIngestData = async () => {
+    if (!extractedData) {
+      alert('No extracted data to ingest. Please extract data from a document first.')
+      return
+    }
+    
+    if (!confirm('Are you sure you want to ingest this data into the database? This will insert/update records.')) {
+      return
+    }
+    
+    setIngestingData(true)
+    setIngestionResult(null)
+    
+    try {
+      console.log('🔄 Ingesting extracted data...')
+      const response = await api.post('/admin/document-import/ingest-data', {
+        extracted_data: extractedData
+      })
+      
+      console.log('✅ Data ingestion response:', response.data)
+      setIngestionResult(response.data)
+      
+      const counts = response.data.counts || {}
+      const errors = response.data.errors || []
+      
+      if (errors.length > 0) {
+        alert(`Data ingested with errors:\n${errors.join('\n')}\n\nCheck the result below for details.`)
+      } else {
+        const msg = `Data ingested successfully!\n\n` +
+          `Inserted: ${counts.majors_inserted || 0} majors, ${counts.program_intakes_inserted || 0} intakes, ${counts.documents_inserted || 0} documents, ${counts.scholarships_inserted || 0} scholarships, ${counts.links_inserted || 0} links\n` +
+          `Updated: ${counts.majors_updated || 0} majors, ${counts.program_intakes_updated || 0} intakes, ${counts.documents_updated || 0} documents`
+        alert(msg)
+      }
+      
+      // Reload relevant data
+      if (activeTab === 'universities') loadUniversities()
+      if (activeTab === 'majors') loadMajorsForDropdown()
+      if (activeTab === 'intakes') loadProgramIntakes()
+      
+    } catch (error) {
+      console.error('Error ingesting data:', error)
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to ingest data'
+      alert(`Data Ingestion Failed: ${errorMessage}`)
+      setIngestionResult({
+        success: false,
+        error: errorMessage
+      })
+    } finally {
+      setIngestingData(false)
     }
   }
   
@@ -4330,7 +4366,7 @@ export default function AdminDashboard() {
               <div className="bg-white rounded-lg border border-gray-200 p-6">
                 <p className="text-sm text-gray-600 mb-4">
                   Upload a document (PDF, DOCX, or TXT) describing a university's programs and intake details. 
-                  The system will generate a PostgreSQL SQL script that you can review and execute.
+                  The system will extract structured data that you can review and ingest into the database.
                 </p>
                 
                 <div className="space-y-4">
@@ -4359,12 +4395,12 @@ export default function AdminDashboard() {
                     {loadingStates.documentImport ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>{sqlGenerationProgress || 'Generating SQL...'}</span>
+                        <span>{extractionProgress || 'Extracting data...'}</span>
                       </>
                     ) : (
                       <>
                         <Upload className="w-4 h-4" />
-                        <span>Generate SQL</span>
+                        <span>Extract Data</span>
                       </>
                     )}
                   </button>
@@ -4408,59 +4444,135 @@ export default function AdminDashboard() {
                     </div>
                   )}
                   
-                  {generatedSQL && (
-                    <div className="mt-4">
-                      <div className="flex justify-between items-center mb-2">
+                  {/* NEW: Extracted Data Display */}
+                  {extractedData && (
+                    <div className="mt-4 space-y-4">
+                      <div className="flex justify-between items-center">
                         <label className="block text-sm font-medium text-gray-700">
-                          Generated SQL Script
+                          Extracted Data
                         </label>
                         <button
                           onClick={() => {
-                            navigator.clipboard.writeText(generatedSQL)
-                            alert('SQL copied to clipboard!')
+                            navigator.clipboard.writeText(JSON.stringify(extractedData, null, 2))
+                            alert('Data copied to clipboard!')
                           }}
                           className="text-sm text-blue-600 hover:text-blue-700"
                         >
-                          Copy SQL
+                          Copy JSON
                         </button>
                       </div>
-                      <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 max-h-96 overflow-y-auto">
-                        <pre className="text-xs text-green-400 whitespace-pre-wrap font-mono">{generatedSQL}</pre>
+                      
+                      {/* Errors/Warnings */}
+                      {extractedData.errors && extractedData.errors.length > 0 && (
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                          <h3 className="text-sm font-semibold text-yellow-800 mb-2">Warnings:</h3>
+                          <ul className="list-disc list-inside text-sm text-yellow-700 space-y-1">
+                            {extractedData.errors.map((error, idx) => (
+                              <li key={idx}>{error}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {/* University Info */}
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <h3 className="text-sm font-semibold text-gray-700 mb-2">University:</h3>
+                        <p className="text-sm text-gray-900">{extractedData.university_name}</p>
                       </div>
                       
-                      <div className="mt-4 flex gap-2">
+                      {/* Majors Summary */}
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                          Majors: {extractedData.majors?.length || 0}
+                        </h3>
+                        {extractedData.majors && extractedData.majors.length > 0 && (
+                          <ul className="text-sm text-gray-700 space-y-1">
+                            {extractedData.majors.map((major, idx) => (
+                              <li key={idx}>
+                                • {major.name} ({major.degree_level}, {major.teaching_language})
+                                {major.intakes && major.intakes.length > 0 && (
+                                  <span className="text-gray-500 ml-2">
+                                    - {major.intakes.length} intake(s)
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                      
+                      {/* Full JSON (Collapsible) */}
+                      <details className="bg-gray-900 border border-gray-700 rounded-lg">
+                        <summary className="p-4 text-sm font-medium text-green-400 cursor-pointer">
+                          View Full JSON
+                        </summary>
+                        <div className="p-4 max-h-96 overflow-y-auto">
+                          <pre className="text-xs text-green-400 whitespace-pre-wrap font-mono">
+                            {JSON.stringify(extractedData, null, 2)}
+                          </pre>
+                        </div>
+                      </details>
+                      
+                      {/* Ingest Button */}
+                      <div className="flex gap-2">
                         <button
-                          onClick={() => handleExecuteSQL()}
-                          disabled={executingSQL || !sqlValidation?.valid}
+                          onClick={handleIngestData}
+                          disabled={ingestingData || !extractedData}
                           className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                         >
-                          {executingSQL ? (
+                          {ingestingData ? (
                             <>
                               <Loader2 className="w-4 h-4 animate-spin" />
-                              Executing...
+                              <span>Ingesting...</span>
                             </>
                           ) : (
                             <>
-                              <Play className="w-4 h-4" />
-                              Execute SQL
+                              <Check className="w-4 h-4" />
+                              <span>Ingest Data</span>
                             </>
                           )}
                         </button>
                         <button
                           onClick={() => {
-                            setGeneratedSQL('')
-                            setSqlValidation(null)
+                            setExtractedData(null)
+                            setIngestionResult(null)
                             setDocumentTextPreview('')
-                            setDocumentImportFile(null)
-                            setSqlExecutionResult(null)
                           }}
                           className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
                         >
                           Clear
                         </button>
                       </div>
+                      
+                      {/* Ingestion Result */}
+                      {ingestionResult && (
+                        <div className={`p-4 rounded-lg ${
+                          ingestionResult.success !== false
+                            ? 'bg-green-50 border border-green-200'
+                            : 'bg-red-50 border border-red-200'
+                        }`}>
+                          <h3 className="text-sm font-semibold mb-2">
+                            {ingestionResult.success !== false ? '✓ Data Ingested Successfully' : '✗ Ingestion Failed'}
+                          </h3>
+                          {ingestionResult.counts && (
+                            <div className="text-sm space-y-1">
+                              <p><strong>Inserted:</strong> {ingestionResult.counts.majors_inserted || 0} majors, {ingestionResult.counts.program_intakes_inserted || 0} intakes, {ingestionResult.counts.documents_inserted || 0} documents, {ingestionResult.counts.scholarships_inserted || 0} scholarships, {ingestionResult.counts.links_inserted || 0} links</p>
+                              <p><strong>Updated:</strong> {ingestionResult.counts.majors_updated || 0} majors, {ingestionResult.counts.program_intakes_updated || 0} intakes, {ingestionResult.counts.documents_updated || 0} documents</p>
+                            </div>
+                          )}
+                          {ingestionResult.errors && ingestionResult.errors.length > 0 && (
+                            <ul className="list-disc list-inside text-sm text-red-700 space-y-1 mt-2">
+                              {ingestionResult.errors.map((error, idx) => (
+                                <li key={idx}>{error}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
+                  
+                  
                   
                   {/* Manual SQL Paste Field */}
                   <div className="mt-6 border-t border-gray-200 pt-6">
