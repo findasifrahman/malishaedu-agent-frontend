@@ -65,6 +65,13 @@ export default function AdminDashboard() {
   const [ragFile, setRagFile] = useState(null)
   const [ragText, setRagText] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [ragDocuments, setRagDocuments] = useState([])
+  const [ragUploadMetadata, setRagUploadMetadata] = useState({
+    doc_type: 'b2c_study',
+    audience: 'student',
+    version: '',
+    source_url: ''
+  })
   const [modelSettings, setModelSettings] = useState({ temperature: 0.7, top_k: 5, top_p: 1.0 })
   const [savingSettings, setSavingSettings] = useState(false)
   
@@ -293,6 +300,8 @@ export default function AdminDashboard() {
       loadUniversities() // Load universities for filter
       loadMajorsForDropdown() // Load majors for filter
       loadProgramIntakes() // Load program intakes for filter
+    } else if (activeTab === 'rag') {
+      loadRAGDocuments()
     } else if (activeTab === 'scholarships') {
       loadScholarships()
     } else if (activeTab === 'partners') {
@@ -573,6 +582,19 @@ export default function AdminDashboard() {
     setAutomationResult(null)
   }
   
+  const loadRAGDocuments = async () => {
+    setLoading('rag', true)
+    try {
+      const response = await api.get('/rag/documents')
+      setRagDocuments(response.data || [])
+    } catch (error) {
+      console.error('Error loading RAG documents:', error)
+      setRagDocuments([])
+    } finally {
+      setLoading('rag', false)
+    }
+  }
+
   const handleRAGUpload = async () => {
     if (!ragFile && !ragText.trim()) {
       alert('Please provide either a file or plain text')
@@ -589,6 +611,15 @@ export default function AdminDashboard() {
         formData.append('text', ragText)
       }
       
+      // Add metadata
+      const metadata = {
+        doc_type: ragUploadMetadata.doc_type,
+        audience: ragUploadMetadata.audience,
+        version: ragUploadMetadata.version || null,
+        source_url: ragUploadMetadata.source_url || null
+      }
+      formData.append('metadata', JSON.stringify(metadata))
+      
       await api.post('/rag/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -598,10 +629,51 @@ export default function AdminDashboard() {
       alert('RAG document uploaded and processed successfully!')
       setRagFile(null)
       setRagText('')
+      setRagUploadMetadata({
+        doc_type: 'b2c_study',
+        audience: 'student',
+        version: '',
+        source_url: ''
+      })
+      loadRAGDocuments() // Reload the list
     } catch (error) {
       alert(error.response?.data?.detail || 'Upload failed')
     } finally {
       setUploading(false)
+    }
+  }
+
+  const handleDeleteRAGDocument = async (sourceId) => {
+    if (!confirm('Are you sure you want to delete this RAG document? This will delete all associated chunks.')) {
+      return
+    }
+    
+    try {
+      await api.delete(`/rag/documents/${sourceId}`)
+      alert('RAG document deleted successfully!')
+      loadRAGDocuments()
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Failed to delete document')
+    }
+  }
+
+  const handleDownloadRAGDocument = async (sourceId, filename) => {
+    try {
+      const response = await api.get(`/rag/documents/${sourceId}/content`)
+      const content = response.data.content
+      
+      // Create a blob and download
+      const blob = new Blob([content], { type: 'text/plain' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename || `rag_document_${sourceId}.txt`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Failed to download document')
     }
   }
   
@@ -2965,9 +3037,69 @@ export default function AdminDashboard() {
           
           {activeTab === 'rag' && (
             <div className="space-y-4">
-              <h2 className="text-xl font-semibold text-gray-900">Upload RAG Document</h2>
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-gray-900">RAG Documents Management</h2>
+                <button
+                  onClick={loadRAGDocuments}
+                  className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {/* Upload Section */}
               <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload New RAG Document</h3>
                 <div className="space-y-4">
+                  {/* Metadata Fields */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Document Type *</label>
+                      <select
+                        value={ragUploadMetadata.doc_type}
+                        onChange={(e) => setRagUploadMetadata({...ragUploadMetadata, doc_type: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      >
+                        <option value="csca">CSCA</option>
+                        <option value="b2c_study">B2C Study</option>
+                        <option value="b2b_partner">B2B Partner</option>
+                        <option value="people_contact">People/Contact</option>
+                        <option value="service_policy">Service Policy</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Audience *</label>
+                      <select
+                        value={ragUploadMetadata.audience}
+                        onChange={(e) => setRagUploadMetadata({...ragUploadMetadata, audience: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      >
+                        <option value="student">Student</option>
+                        <option value="partner">Partner</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Version (Optional)</label>
+                      <input
+                        type="text"
+                        value={ragUploadMetadata.version}
+                        onChange={(e) => setRagUploadMetadata({...ragUploadMetadata, version: e.target.value})}
+                        placeholder="e.g., 2026, v1.0"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Source URL (Optional)</label>
+                      <input
+                        type="url"
+                        value={ragUploadMetadata.source_url}
+                        onChange={(e) => setRagUploadMetadata({...ragUploadMetadata, source_url: e.target.value})}
+                        placeholder="https://..."
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      />
+                    </div>
+                  </div>
+                  
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Or Enter Plain Text (will be distilled via GPT)
@@ -3004,6 +3136,90 @@ export default function AdminDashboard() {
                     {uploading ? 'Uploading & Processing...' : 'Upload & Process'}
                   </button>
                 </div>
+              </div>
+
+              {/* Documents List */}
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <h3 className="text-lg font-semibold text-gray-900 p-4 border-b border-gray-200">Existing RAG Documents</h3>
+                {loadingStates.rag ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Name</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Type</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Audience</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Version</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Status</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Chunks</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Created</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {ragDocuments.length === 0 ? (
+                          <tr>
+                            <td colSpan="8" className="px-4 py-8 text-center text-gray-500">
+                              No RAG documents found. Upload one to get started.
+                            </td>
+                          </tr>
+                        ) : (
+                          ragDocuments.map((doc) => (
+                            <tr key={doc.id} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 text-sm text-gray-900 font-medium">{doc.name}</td>
+                              <td className="px-4 py-3 text-sm text-gray-600">
+                                <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
+                                  {doc.doc_type}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600">
+                                <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">
+                                  {doc.audience}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600">{doc.version || '-'}</td>
+                              <td className="px-4 py-3 text-sm">
+                                <span className={`px-2 py-1 rounded text-xs ${
+                                  doc.status === 'active' 
+                                    ? 'bg-green-100 text-green-700' 
+                                    : 'bg-gray-100 text-gray-700'
+                                }`}>
+                                  {doc.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600">{doc.chunk_count || 0}</td>
+                              <td className="px-4 py-3 text-sm text-gray-500">
+                                {doc.created_at ? new Date(doc.created_at).toLocaleDateString() : '-'}
+                              </td>
+                              <td className="px-4 py-3 text-sm">
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handleDownloadRAGDocument(doc.id, doc.name)}
+                                    className="text-blue-600 hover:text-blue-800"
+                                    title="Download"
+                                  >
+                                    <FileText className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteRAGDocument(doc.id)}
+                                    className="text-red-600 hover:text-red-800"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}
