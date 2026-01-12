@@ -26,6 +26,8 @@ export default function LoginPage() {
         navigate('/partner', { replace: true })
       } else if (user?.role === 'student') {
         navigate('/dashboard', { replace: true })
+      } else if (user?.role === 'ops') {
+        navigate('/ops', { replace: true })
       } else {
         navigate('/', { replace: true })
       }
@@ -60,6 +62,8 @@ export default function LoginPage() {
           navigate('/partner')
         } else if (userRole === 'student') {
           navigate('/dashboard')
+        } else if (userRole === 'ops') {
+          navigate('/ops')
         } else {
           navigate('/')
         }

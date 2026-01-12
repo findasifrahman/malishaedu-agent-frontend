@@ -1,10 +1,11 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ChatPage from './pages/ChatPage'
-import AdminDashboard from './pages/AdminDashboard'
+import AdminRouter from './pages/admin/AdminRouter'
 import StudentDashboard from './pages/StudentDashboard'
 import PartnerDashboard from './pages/PartnerDashboard'
 import LoginPage from './pages/LoginPage'
+import OpsDashboard from './pages/OpsDashboard'
 import { useAuthStore } from './store/authStore'
 
 const queryClient = new QueryClient()
@@ -67,6 +68,14 @@ function PartnerRoute({ children }) {
   return children
 }
 
+function OpsRoute({ children }) {
+  const { user, isAuthenticated } = useAuthStore()
+  if (!isAuthenticated || user?.role !== 'ops') {
+    return <Navigate to="/login" replace />
+  }
+  return children
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -90,10 +99,10 @@ function App() {
             element={<ChatPage />}
           />
           <Route
-            path="/admin"
+            path="/admin/*"
             element={
               <AdminRoute>
-                <AdminDashboard />
+                <AdminRouter />
               </AdminRoute>
             }
           />
@@ -103,6 +112,14 @@ function App() {
               <PartnerRoute>
                 <PartnerDashboard />
               </PartnerRoute>
+            }
+          />
+          <Route
+            path="/ops"
+            element={
+              <OpsRoute>
+                <OpsDashboard />
+              </OpsRoute>
             }
           />
         </Routes>
