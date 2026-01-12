@@ -1,8 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Search, Send, LogOut, MessageSquare, Bot, User, Shield } from 'lucide-react'
+import { Search, Send, LogOut, MessageSquare, Bot, User, Shield, Pin, Ban } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import api from '../services/api'
+import Toast from '../components/Toast'
+import ConfirmDialog from '../components/ConfirmDialog'
+import ContextMenu from '../components/ContextMenu'
+
+// Constants
+const POLL_INTERVAL_MS = 6000 // Poll conversations every 6 seconds
+const MESSAGE_POLL_INTERVAL_MS = 3000 // Poll messages every 3 seconds
+const TYPING_DEBOUNCE_MS = 800
 
 // Simple debounce function
 function debounce(func, wait) {
@@ -31,15 +39,37 @@ export default function OpsDashboard() {
   const [hasMore, setHasMore] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   
+  // New state for WhatsApp-like features
+  const [toast, setToast] = useState({ visible: false, message: '', conversationId: null })
+  const [confirmDialog, setConfirmDialog] = useState({ visible: false, type: null, conversation: null, reason: '' })
+  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, conversation: null })
+  const [isAtBottom, setIsAtBottom] = useState(true)
+  const [lastSeenMessageAt, setLastSeenMessageAt] = useState(null)
+  
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
+  const typingTimeoutRef = useRef(null)
+  const longPressTimerRef = useRef(null)
 
   // Debounced search
   const debouncedSearch = useRef(
     debounce(async (term) => {
       setPage(1)
-      await loadConversations(1, term)
+      await loadConversations(1, term, true)
     }, 500)
+  ).current
+
+  // Debounced typing indicator
+  const debouncedTyping = useRef(
+    debounce(async (conversationId, isTyping) => {
+      if (conversationId) {
+        try {
+          await api.post(`/ops/conversations/${conversationId}/typing`, { is_typing: isTyping })
+        } catch (error) {
+          // Silent fail for typing indicator
+        }
+      }
+    }, TYPING_DEBOUNCE_MS)
   ).current
 
   useEffect(() => {
@@ -49,22 +79,48 @@ export default function OpsDashboard() {
   }, [searchTerm, debouncedSearch])
 
   useEffect(() => {
-    loadConversations(page, searchTerm)
+    loadConversations(page, searchTerm, false)
   }, [page])
 
+  // Poll conversations periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadConversations(page, searchTerm, true)
+    }, POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [page, searchTerm])
+
+  // Handle selected conversation
   useEffect(() => {
     if (selectedConversation) {
-      loadMessages(selectedConversation.conversation_id)
-      // Poll for new messages every 3 seconds
+      loadMessages(selectedConversation.conversation_id, false)
+      markAsRead(selectedConversation.conversation_id)
+      
+      // Poll for new messages
       const interval = setInterval(() => {
         loadMessages(selectedConversation.conversation_id, true)
-      }, 3000)
+      }, MESSAGE_POLL_INTERVAL_MS)
       return () => clearInterval(interval)
     }
   }, [selectedConversation])
 
-  const loadConversations = async (pageNum = 1, search = '') => {
-    setLoading(true)
+  // Check scroll position
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container
+      const atBottom = scrollHeight - scrollTop - clientHeight < 50
+      setIsAtBottom(atBottom)
+    }
+
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [messages])
+
+  const loadConversations = async (pageNum = 1, search = '', silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const response = await api.get('/ops/conversations', {
         params: { page: pageNum, page_size: 30, search }
@@ -75,10 +131,18 @@ export default function OpsDashboard() {
         setConversations(prev => [...prev, ...(response.data.items || [])])
       }
       setHasMore(response.data.page < response.data.total_pages)
+      
+      // Update selected conversation if it exists
+      if (selectedConversation) {
+        const updated = response.data.items?.find(c => c.conversation_id === selectedConversation.conversation_id)
+        if (updated) {
+          setSelectedConversation(updated)
+        }
+      }
     } catch (error) {
       console.error('Error loading conversations:', error)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -88,11 +152,43 @@ export default function OpsDashboard() {
       const response = await api.get(`/ops/conversations/${conversationId}/messages`, {
         params: { limit: 50 }
       })
-      setMessages(response.data || [])
-      // Scroll to bottom after loading
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-      }, 100)
+      const newMessages = response.data || []
+      
+      // Check for new inbound messages
+      if (silent && lastSeenMessageAt && newMessages.length > 0) {
+        const latestInbound = newMessages
+          .filter(m => m.direction === 'in')
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
+        
+        if (latestInbound && new Date(latestInbound.created_at) > lastSeenMessageAt) {
+          if (!isAtBottom) {
+            const conv = conversations.find(c => c.conversation_id === conversationId)
+            setToast({
+              visible: true,
+              message: `New message from ${conv?.display_name || formatPhone(conv?.external_from || '')}`,
+              conversationId
+            })
+          } else {
+            // Auto-scroll and mark read if at bottom
+            markAsRead(conversationId)
+          }
+        }
+      }
+      
+      setMessages(newMessages)
+      
+      // Update last seen message timestamp
+      if (newMessages.length > 0) {
+        const latest = newMessages[newMessages.length - 1]
+        setLastSeenMessageAt(new Date(latest.created_at))
+      }
+      
+      // Scroll to bottom if at bottom or first load
+      if (isAtBottom || !silent) {
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: silent ? 'auto' : 'smooth' })
+        }, 100)
+      }
     } catch (error) {
       console.error('Error loading messages:', error)
     } finally {
@@ -100,12 +196,28 @@ export default function OpsDashboard() {
     }
   }
 
+  const markAsRead = async (conversationId) => {
+    try {
+      await api.post(`/ops/conversations/${conversationId}/mark-read`)
+      // Update local state
+      setConversations(prev => prev.map(c => 
+        c.conversation_id === conversationId 
+          ? { ...c, unread_count: 0 }
+          : c
+      ))
+      if (selectedConversation?.conversation_id === conversationId) {
+        setSelectedConversation(prev => prev ? { ...prev, unread_count: 0 } : null)
+      }
+    } catch (error) {
+      console.error('Error marking as read:', error)
+    }
+  }
+
   const handleTakeover = async () => {
     if (!selectedConversation) return
     try {
       await api.post(`/ops/conversations/${selectedConversation.conversation_id}/takeover`)
-      // Reload conversations to update mode
-      await loadConversations(page, searchTerm)
+      await loadConversations(page, searchTerm, true)
       setSelectedConversation(prev => prev ? { ...prev, mode: 'HUMAN' } : null)
     } catch (error) {
       console.error('Error taking over:', error)
@@ -117,8 +229,7 @@ export default function OpsDashboard() {
     if (!selectedConversation) return
     try {
       await api.post(`/ops/conversations/${selectedConversation.conversation_id}/release`)
-      // Reload conversations to update mode
-      await loadConversations(page, searchTerm)
+      await loadConversations(page, searchTerm, true)
       setSelectedConversation(prev => prev ? { ...prev, mode: 'AI' } : null)
     } catch (error) {
       console.error('Error releasing:', error)
@@ -135,15 +246,76 @@ export default function OpsDashboard() {
         text: messageText.trim()
       })
       setMessageText('')
-      // Reload messages
-      await loadMessages(selectedConversation.conversation_id)
-      // Reload conversations to update last_message_at
-      await loadConversations(page, searchTerm)
+      
+      // Send typing false
+      debouncedTyping(selectedConversation.conversation_id, false)
+      
+      await loadMessages(selectedConversation.conversation_id, false)
+      await loadConversations(page, searchTerm, true)
     } catch (error) {
       console.error('Error sending message:', error)
       alert('Failed to send message')
     } finally {
       setSending(false)
+    }
+  }
+
+  const handlePin = async (conversationId) => {
+    try {
+      await api.post(`/ops/conversations/${conversationId}/pin`, { pinned: true })
+      await loadConversations(page, searchTerm, true)
+    } catch (error) {
+      console.error('Error pinning:', error)
+      alert('Failed to pin conversation')
+    }
+  }
+
+  const handleUnpin = async (conversationId) => {
+    try {
+      await api.post(`/ops/conversations/${conversationId}/pin`, { pinned: false })
+      await loadConversations(page, searchTerm, true)
+    } catch (error) {
+      console.error('Error unpinning:', error)
+      alert('Failed to unpin conversation')
+    }
+  }
+
+  const handleBlock = async (conversationId, reason = '') => {
+    try {
+      await api.post(`/ops/conversations/${conversationId}/block`, { blocked: true, reason })
+      await loadConversations(page, searchTerm, true)
+      if (selectedConversation?.conversation_id === conversationId) {
+        setSelectedConversation(prev => prev ? { ...prev, blocked: true } : null)
+      }
+    } catch (error) {
+      console.error('Error blocking:', error)
+      alert('Failed to block conversation')
+    }
+  }
+
+  const handleUnblock = async (conversationId) => {
+    try {
+      await api.post(`/ops/conversations/${conversationId}/block`, { blocked: false })
+      await loadConversations(page, searchTerm, true)
+      if (selectedConversation?.conversation_id === conversationId) {
+        setSelectedConversation(prev => prev ? { ...prev, blocked: false } : null)
+      }
+    } catch (error) {
+      console.error('Error unblocking:', error)
+      alert('Failed to unblock conversation')
+    }
+  }
+
+  const handleDelete = async (conversationId) => {
+    try {
+      await api.delete(`/ops/conversations/${conversationId}`)
+      await loadConversations(page, searchTerm, true)
+      if (selectedConversation?.conversation_id === conversationId) {
+        setSelectedConversation(null)
+      }
+    } catch (error) {
+      console.error('Error deleting:', error)
+      alert('Failed to delete conversation')
     }
   }
 
@@ -153,23 +325,68 @@ export default function OpsDashboard() {
   }
 
   const formatPhone = (phone) => {
-    // Format whatsapp:+880... to +880...
-    return phone.replace('whatsapp:', '')
+    return phone?.replace('whatsapp:', '') || ''
   }
 
+  // WhatsApp-like time formatting
   const formatTime = (dateString) => {
     if (!dateString) return ''
     const date = new Date(dateString)
     const now = new Date()
-    const diffMs = now - date
-    const diffMins = Math.floor(diffMs / 60000)
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const messageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
     
-    if (diffMins < 1) return 'Just now'
-    if (diffMins < 60) return `${diffMins}m ago`
-    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`
-    if (diffMins < 10080) return `${Math.floor(diffMins / 1440)}d ago`
-    return date.toLocaleDateString()
+    if (messageDate.getTime() === today.getTime()) {
+      // Today: HH:MM
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    } else if (messageDate.getTime() === yesterday.getTime()) {
+      // Yesterday
+      return 'Yesterday'
+    } else {
+      // Date
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+    }
   }
+
+  // Context menu handlers
+  const handleContextMenu = (e, conversation) => {
+    e.preventDefault()
+    setContextMenu({
+      visible: true,
+      x: e.clientX || e.touches?.[0]?.clientX || 0,
+      y: e.clientY || e.touches?.[0]?.clientY || 0,
+      conversation
+    })
+  }
+
+  const handleLongPress = (conversation) => {
+    longPressTimerRef.current = setTimeout(() => {
+      setContextMenu({
+        visible: true,
+        x: 0,
+        y: 0,
+        conversation
+      })
+    }, 450)
+  }
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }
+
+  // Typing indicator
+  useEffect(() => {
+    if (messageText && selectedConversation) {
+      debouncedTyping(selectedConversation.conversation_id, true)
+    } else if (selectedConversation) {
+      debouncedTyping(selectedConversation.conversation_id, false)
+    }
+  }, [messageText, selectedConversation])
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
@@ -185,6 +402,9 @@ export default function OpsDashboard() {
           <h1 className="text-lg font-semibold">WhatsApp Inbox</h1>
         </div>
         <div className="flex items-center gap-2">
+          {messageText && selectedConversation && (
+            <span className="text-xs opacity-75">Typing...</span>
+          )}
           <span className="text-sm">{user?.name}</span>
           <button
             onClick={handleLogout}
@@ -225,40 +445,61 @@ export default function OpsDashboard() {
               <div className="p-4 text-center text-gray-500">No conversations found</div>
             ) : (
               conversations.map((conv) => (
-                <button
+                <div
                   key={conv.conversation_id}
-                  onClick={() => {
-                    setSelectedConversation(conv)
-                    setSidebarOpen(false) // Close sidebar on mobile
-                  }}
-                  className={`w-full p-3 border-b border-gray-100 hover:bg-gray-50 text-left ${
-                    selectedConversation?.conversation_id === conv.conversation_id
-                      ? 'bg-green-50 border-l-4 border-l-green-600'
-                      : ''
-                  }`}
+                  onContextMenu={(e) => handleContextMenu(e, conv)}
+                  onTouchStart={() => handleLongPress(conv)}
+                  onTouchEnd={cancelLongPress}
+                  onTouchCancel={cancelLongPress}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold text-gray-900 truncate">
-                          {conv.display_name || formatPhone(conv.external_from)}
+                  <button
+                    onClick={() => {
+                      setSelectedConversation(conv)
+                      setSidebarOpen(false)
+                      markAsRead(conv.conversation_id)
+                    }}
+                    className={`w-full p-3 border-b border-gray-100 hover:bg-gray-50 text-left relative ${
+                      selectedConversation?.conversation_id === conv.conversation_id
+                        ? 'bg-green-50 border-l-4 border-l-green-600'
+                        : ''
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          {conv.pinned && (
+                            <Pin className="w-4 h-4 text-yellow-500 flex-shrink-0" />
+                          )}
+                          {conv.blocked && (
+                            <Ban className="w-4 h-4 text-red-500 flex-shrink-0" />
+                          )}
+                          <span className={`font-semibold truncate ${conv.unread_count > 0 ? 'text-gray-900' : 'text-gray-700'}`}>
+                            {conv.display_name || formatPhone(conv.external_from)}
+                          </span>
+                          {conv.mode === 'HUMAN' && (
+                            <Shield className="w-4 h-4 text-green-600 flex-shrink-0" title="Human Mode" />
+                          )}
+                          {conv.mode === 'AI' && (
+                            <Bot className="w-4 h-4 text-gray-400 flex-shrink-0" title="AI Mode" />
+                          )}
+                        </div>
+                        <p className={`text-sm truncate ${conv.unread_count > 0 ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                          {conv.last_message_preview || 'No messages'}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 ml-2 flex-shrink-0">
+                        <span className="text-xs text-gray-400">
+                          {formatTime(conv.last_message_at)}
                         </span>
-                        {conv.mode === 'HUMAN' && (
-                          <Shield className="w-4 h-4 text-green-600 flex-shrink-0" title="Human Mode" />
-                        )}
-                        {conv.mode === 'AI' && (
-                          <Bot className="w-4 h-4 text-gray-400 flex-shrink-0" title="AI Mode" />
+                        {conv.unread_count > 0 && (
+                          <span className="bg-green-600 text-white text-xs font-semibold rounded-full px-2 py-0.5 min-w-[20px] text-center">
+                            {conv.unread_count > 99 ? '99+' : conv.unread_count}
+                          </span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-600 truncate">
-                        {conv.last_message_preview || 'No messages'}
-                      </p>
                     </div>
-                    <span className="text-xs text-gray-400 ml-2 flex-shrink-0">
-                      {formatTime(conv.last_message_at)}
-                    </span>
-                  </div>
-                </button>
+                  </button>
+                </div>
               ))
             )}
           </div>
@@ -279,7 +520,9 @@ export default function OpsDashboard() {
               {/* Conversation Header */}
               <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
                 <div>
-                  <h2 className="font-semibold text-gray-900">
+                  <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                    {selectedConversation.pinned && <Pin className="w-4 h-4 text-yellow-500" />}
+                    {selectedConversation.blocked && <Ban className="w-4 h-4 text-red-500" />}
                     {selectedConversation.display_name || formatPhone(selectedConversation.external_from)}
                   </h2>
                   <p className="text-sm text-gray-500">{formatPhone(selectedConversation.external_from)}</p>
@@ -350,37 +593,50 @@ export default function OpsDashboard() {
 
               {/* Input */}
               <div className="bg-white border-t border-gray-200 p-3">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={messageText}
-                    onChange={(e) => setMessageText(e.target.value)}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        handleSendMessage()
-                      }
-                    }}
-                    placeholder="Type a message..."
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                    disabled={sending || selectedConversation.mode === 'AI'}
-                  />
-                  <button
-                    onClick={handleSendMessage}
-                    disabled={!messageText.trim() || sending || selectedConversation.mode === 'AI'}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {sending ? (
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <Send className="w-5 h-5" />
+                {selectedConversation.blocked ? (
+                  <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
+                    User is blocked. Unblock to reply.
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={messageText}
+                        onChange={(e) => setMessageText(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault()
+                            handleSendMessage()
+                          }
+                        }}
+                        onBlur={() => {
+                          if (selectedConversation) {
+                            debouncedTyping(selectedConversation.conversation_id, false)
+                          }
+                        }}
+                        placeholder="Type a message..."
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                        disabled={sending || selectedConversation.mode === 'AI'}
+                      />
+                      <button
+                        onClick={handleSendMessage}
+                        disabled={!messageText.trim() || sending || selectedConversation.mode === 'AI'}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {sending ? (
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <Send className="w-5 h-5" />
+                        )}
+                      </button>
+                    </div>
+                    {selectedConversation.mode === 'AI' && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        Take over the conversation to send messages manually
+                      </p>
                     )}
-                  </button>
-                </div>
-                {selectedConversation.mode === 'AI' && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    Take over the conversation to send messages manually
-                  </p>
+                  </>
                 )}
               </div>
             </>
@@ -394,6 +650,78 @@ export default function OpsDashboard() {
           )}
         </main>
       </div>
+
+      {/* Toast */}
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        conversationId={toast.conversationId}
+        onClose={() => setToast({ visible: false, message: '', conversationId: null })}
+        onJumpTo={(conversationId) => {
+          const conv = conversations.find(c => c.conversation_id === conversationId)
+          if (conv) {
+            setSelectedConversation(conv)
+            markAsRead(conversationId)
+            setTimeout(() => {
+              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+            }, 100)
+          }
+        }}
+      />
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        visible={confirmDialog.visible}
+        title={
+          confirmDialog.type === 'delete' ? 'Delete Conversation' :
+          confirmDialog.type === 'block' ? 'Block User' :
+          confirmDialog.type === 'unblock' ? 'Unblock User' : ''
+        }
+        message={
+          confirmDialog.type === 'delete' ? 'Are you sure you want to delete this conversation? This action cannot be undone.' :
+          confirmDialog.type === 'block' ? 'Are you sure you want to block this user? AI will not reply to their messages (cost control).' :
+          confirmDialog.type === 'unblock' ? 'Are you sure you want to unblock this user?' : ''
+        }
+        confirmText={confirmDialog.type === 'delete' ? 'Delete' : confirmDialog.type === 'block' ? 'Block' : 'Unblock'}
+        showReasonInput={confirmDialog.type === 'block'}
+        reasonValue={confirmDialog.reason}
+        onReasonChange={(value) => setConfirmDialog(prev => ({ ...prev, reason: value }))}
+        onConfirm={() => {
+          const { type, conversation, reason } = confirmDialog
+          if (type === 'delete') {
+            handleDelete(conversation.conversation_id)
+          } else if (type === 'block') {
+            handleBlock(conversation.conversation_id, reason)
+          } else if (type === 'unblock') {
+            handleUnblock(conversation.conversation_id)
+          }
+          setConfirmDialog({ visible: false, type: null, conversation: null, reason: '' })
+        }}
+        onCancel={() => setConfirmDialog({ visible: false, type: null, conversation: null, reason: '' })}
+      />
+
+      {/* Context Menu */}
+      <ContextMenu
+        visible={contextMenu.visible}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        conversation={contextMenu.conversation}
+        onClose={() => setContextMenu({ visible: false, x: 0, y: 0, conversation: null })}
+        onPin={handlePin}
+        onUnpin={handleUnpin}
+        onBlock={(id) => {
+          const conv = conversations.find(c => c.conversation_id === id)
+          setConfirmDialog({ visible: true, type: 'block', conversation: conv, reason: '' })
+        }}
+        onUnblock={(id) => {
+          const conv = conversations.find(c => c.conversation_id === id)
+          setConfirmDialog({ visible: true, type: 'unblock', conversation: conv, reason: '' })
+        }}
+        onDelete={(id) => {
+          const conv = conversations.find(c => c.conversation_id === id)
+          setConfirmDialog({ visible: true, type: 'delete', conversation: conv, reason: '' })
+        }}
+      />
     </div>
   )
 }
