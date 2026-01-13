@@ -145,6 +145,72 @@ export default function AdminUniversitiesPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Province</label>
               <input type="text" value={universityForm.province} onChange={(e) => setUniversityForm({...universityForm, province: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+              <input type="text" value={universityForm.country} onChange={(e) => setUniversityForm({...universityForm, country: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Logo URL</label>
+              <input type="url" value={universityForm.logo_url} onChange={(e) => setUniversityForm({...universityForm, logo_url: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="https://example.com/logo.png" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">University Ranking</label>
+              <input type="number" value={universityForm.university_ranking} onChange={(e) => setUniversityForm({...universityForm, university_ranking: e.target.value ? parseInt(e.target.value) : ''})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">World Ranking Band</label>
+              <input type="text" value={universityForm.world_ranking_band} onChange={(e) => setUniversityForm({...universityForm, world_ranking_band: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g., 301-400" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">National Ranking</label>
+              <input type="number" value={universityForm.national_ranking} onChange={(e) => setUniversityForm({...universityForm, national_ranking: e.target.value ? parseInt(e.target.value) : ''})} className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Default Currency</label>
+              <select value={universityForm.default_currency} onChange={(e) => setUniversityForm({...universityForm, default_currency: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2">
+                <option value="CNY">CNY</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <textarea value={universityForm.description} onChange={(e) => setUniversityForm({...universityForm, description: e.target.value})} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="University description..." />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Website</label>
+              <input type="url" value={universityForm.website} onChange={(e) => setUniversityForm({...universityForm, website: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="https://example.com" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Contact Email</label>
+              <input type="email" value={universityForm.contact_email} onChange={(e) => setUniversityForm({...universityForm, contact_email: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="contact@university.edu" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">WeChat</label>
+              <input type="text" value={universityForm.contact_wechat} onChange={(e) => setUniversityForm({...universityForm, contact_wechat: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="WeChat ID" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Aliases</label>
+              <input 
+                type="text" 
+                value={universityForm.aliases} 
+                onChange={(e) => setUniversityForm({...universityForm, aliases: e.target.value})} 
+                className="w-full border border-gray-300 rounded-lg px-3 py-2" 
+                placeholder="Comma-separated aliases (e.g., PKU, Peking University)"
+              />
+              <p className="text-xs text-gray-500 mt-1">Enter alternative names separated by commas</p>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Project Tags</label>
+              <input 
+                type="text" 
+                value={universityForm.project_tags} 
+                onChange={(e) => setUniversityForm({...universityForm, project_tags: e.target.value})} 
+                className="w-full border border-gray-300 rounded-lg px-3 py-2" 
+                placeholder="Comma-separated tags (e.g., 985, 211, C9, Double First Class)"
+              />
+              <p className="text-xs text-gray-500 mt-1">Enter project tags separated by commas</p>
+            </div>
             <div className="col-span-2 flex gap-6">
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={universityForm.is_partner} onChange={(e) => setUniversityForm({...universityForm, is_partner: e.target.checked})} />

@@ -18,6 +18,9 @@ export default function ChatPage() {
   const [showApplicationsSidebar, setShowApplicationsSidebar] = useState(false)
   const [applications, setApplications] = useState([])
   const [loadingApplications, setLoadingApplications] = useState(false)
+  const [showPreferencesSidebar, setShowPreferencesSidebar] = useState(false)
+  const [userPreferences, setUserPreferences] = useState(null)
+  const [loadingPreferences, setLoadingPreferences] = useState(false)
   const [deviceFingerprint] = useState(() => {
     // Generate or retrieve device fingerprint
     let fp = localStorage.getItem('device_fingerprint')
@@ -63,6 +66,34 @@ export default function ChatPage() {
       loadApplications()
     }
   }, [isAuthenticated, user])
+
+  // Load user preferences from memory system
+  useEffect(() => {
+    loadUserPreferences()
+  }, [chatSessionId, isAuthenticated, user])
+
+  const loadUserPreferences = async () => {
+    setLoadingPreferences(true)
+    try {
+      const params = new URLSearchParams({
+        channel: 'web',
+        chat_session_id: chatSessionId,
+        ...(isAuthenticated && user?.id && { user_id: user.id.toString() })
+      })
+      const response = await api.get(`/memory/profile?${params}`)
+      if (response.data?.has_profile && Object.keys(response.data.preferences || {}).length > 0) {
+        setUserPreferences(response.data.preferences)
+        setShowPreferencesSidebar(true) // Auto-show if preferences exist
+      } else {
+        setUserPreferences(null)
+      }
+    } catch (error) {
+      console.error('Error loading user preferences:', error)
+      setUserPreferences(null)
+    } finally {
+      setLoadingPreferences(false)
+    }
+  }
 
   const loadApplications = async () => {
     setLoadingApplications(true)
@@ -221,9 +252,17 @@ export default function ChatPage() {
                   })
                 }
               }
-              if (data.done) {
-                // Final cleanup: remove obvious duplicate paragraphs/sentences
-                setMessages(prev => {
+                if (data.done) {
+                  // Store chat_session_id if returned by backend (for consistency)
+                  if (data.chat_session_id) {
+                    localStorage.setItem('chat_session_id', data.chat_session_id)
+                  }
+                  
+                  // Reload preferences after response (may have been updated)
+                  loadUserPreferences()
+                  
+                  // Final cleanup: remove obvious duplicate paragraphs/sentences
+                  setMessages(prev => {
                   const newMessages = [...prev]
                   if (assistantMessageIndex >= 0 && assistantMessageIndex < newMessages.length) {
                     let finalContent = accumulatedContent
@@ -286,6 +325,168 @@ export default function ChatPage() {
   
   return (
     <div className="flex h-screen bg-gray-50">
+      {/* User Preferences Sidebar */}
+      {userPreferences && (
+        <>
+          {showPreferencesSidebar && (
+            <div className="w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm hidden sm:flex">
+              <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-gray-900">Your Preferences</h2>
+                <button
+                  onClick={() => setShowPreferencesSidebar(false)}
+                  className="p-1 hover:bg-gray-100 rounded"
+                >
+                  <X className="w-4 h-4 text-gray-500" />
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4">
+                <div className="space-y-3">
+                  {userPreferences.university && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                      <p className="text-xs text-blue-600 font-medium mb-1">University</p>
+                      <p className="text-sm text-gray-900">{userPreferences.university}</p>
+                    </div>
+                  )}
+                  {userPreferences.major && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-2">
+                      <p className="text-xs text-green-600 font-medium mb-1">Major</p>
+                      <p className="text-sm text-gray-900">{userPreferences.major}</p>
+                    </div>
+                  )}
+                  {userPreferences.degree_level && (
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-2">
+                      <p className="text-xs text-purple-600 font-medium mb-1">Degree Level</p>
+                      <p className="text-sm text-gray-900">{userPreferences.degree_level}</p>
+                    </div>
+                  )}
+                  {(userPreferences.intake_term || userPreferences.intake_year) && (
+                    <div className="bg-orange-50 border border-orange-200 rounded-lg p-2">
+                      <p className="text-xs text-orange-600 font-medium mb-1">Intake</p>
+                      <p className="text-sm text-gray-900">
+                        {userPreferences.intake_term || ''} {userPreferences.intake_year || ''}
+                      </p>
+                    </div>
+                  )}
+                  {userPreferences.teaching_language && (
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-2">
+                      <p className="text-xs text-indigo-600 font-medium mb-1">Teaching Language</p>
+                      <p className="text-sm text-gray-900">{userPreferences.teaching_language}</p>
+                    </div>
+                  )}
+                  {(userPreferences.city || userPreferences.province) && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-2">
+                      <p className="text-xs text-gray-600 font-medium mb-1">Location</p>
+                      <p className="text-sm text-gray-900">
+                        {[userPreferences.city, userPreferences.province].filter(Boolean).join(', ')}
+                      </p>
+                    </div>
+                  )}
+                  {(userPreferences.wants_scholarship || userPreferences.wants_fees) && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2">
+                      <p className="text-xs text-yellow-600 font-medium mb-1">Interests</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {userPreferences.wants_scholarship && (
+                          <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded">Scholarship</span>
+                        )}
+                        {userPreferences.wants_fees && (
+                          <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded">Fees</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {!showPreferencesSidebar && (
+            <button
+              onClick={() => setShowPreferencesSidebar(true)}
+              className={`fixed bg-green-600 text-white p-2 rounded-lg shadow-lg hover:bg-green-700 z-10 ${isAuthenticated && user?.role === 'student' ? 'top-44' : 'top-20'} left-4`}
+              title="Show Preferences"
+            >
+              <User className="w-5 h-5" />
+            </button>
+          )}
+          
+          {/* Mobile preferences drawer */}
+          {showPreferencesSidebar && (
+            <div className="sm:hidden fixed inset-0 z-50 bg-black bg-opacity-50" onClick={() => setShowPreferencesSidebar(false)}>
+              <div className="w-80 bg-white h-full shadow-xl" onClick={(e) => e.stopPropagation()}>
+                <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-gray-900">Your Preferences</h2>
+                  <button
+                    onClick={() => setShowPreferencesSidebar(false)}
+                    className="p-1 hover:bg-gray-100 rounded"
+                  >
+                    <X className="w-4 h-4 text-gray-500" />
+                  </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4">
+                  <div className="space-y-3">
+                    {userPreferences.university && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                        <p className="text-xs text-blue-600 font-medium mb-1">University</p>
+                        <p className="text-sm text-gray-900">{userPreferences.university}</p>
+                      </div>
+                    )}
+                    {userPreferences.major && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-2">
+                        <p className="text-xs text-green-600 font-medium mb-1">Major</p>
+                        <p className="text-sm text-gray-900">{userPreferences.major}</p>
+                      </div>
+                    )}
+                    {userPreferences.degree_level && (
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-2">
+                        <p className="text-xs text-purple-600 font-medium mb-1">Degree Level</p>
+                        <p className="text-sm text-gray-900">{userPreferences.degree_level}</p>
+                      </div>
+                    )}
+                    {(userPreferences.intake_term || userPreferences.intake_year) && (
+                      <div className="bg-orange-50 border border-orange-200 rounded-lg p-2">
+                        <p className="text-xs text-orange-600 font-medium mb-1">Intake</p>
+                        <p className="text-sm text-gray-900">
+                          {userPreferences.intake_term || ''} {userPreferences.intake_year || ''}
+                        </p>
+                      </div>
+                    )}
+                    {userPreferences.teaching_language && (
+                      <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-2">
+                        <p className="text-xs text-indigo-600 font-medium mb-1">Teaching Language</p>
+                        <p className="text-sm text-gray-900">{userPreferences.teaching_language}</p>
+                      </div>
+                    )}
+                    {(userPreferences.city || userPreferences.province) && (
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-2">
+                        <p className="text-xs text-gray-600 font-medium mb-1">Location</p>
+                        <p className="text-sm text-gray-900">
+                          {[userPreferences.city, userPreferences.province].filter(Boolean).join(', ')}
+                        </p>
+                      </div>
+                    )}
+                    {(userPreferences.wants_scholarship || userPreferences.wants_fees) && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2">
+                        <p className="text-xs text-yellow-600 font-medium mb-1">Interests</p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {userPreferences.wants_scholarship && (
+                            <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded">Scholarship</span>
+                          )}
+                          {userPreferences.wants_fees && (
+                            <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded">Fees</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
       {/* Applications Sidebar for Students */}
       {isAuthenticated && user?.role === 'student' && (
         <>
