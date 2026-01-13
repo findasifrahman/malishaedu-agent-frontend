@@ -27,7 +27,9 @@ function debounce(func, wait) {
 
 export default function OpsDashboard() {
   const navigate = useNavigate()
-  const { logout, user } = useAuthStore()
+  const { logout, user, isAuthenticated } = useAuthStore()
+  
+  // State declarations (must be before early return)
   const [conversations, setConversations] = useState([])
   const [selectedConversation, setSelectedConversation] = useState(null)
   const [messages, setMessages] = useState([])
@@ -50,59 +52,185 @@ export default function OpsDashboard() {
   const messagesContainerRef = useRef(null)
   const typingTimeoutRef = useRef(null)
   const longPressTimerRef = useRef(null)
+  const isOpsUserRef = useRef(false) // Track if user is OPS to prevent stale closures
+  
+  // Check if user is OPS - update ref immediately
+  const isOpsUser = isAuthenticated && user?.role === 'ops'
+  isOpsUserRef.current = isOpsUser // Update ref immediately for use in intervals
+  
+  // Check if user is OPS - redirect if not (double check even though route guard exists)
+  useEffect(() => {
+    if (!isAuthenticated || user?.role !== 'ops') {
+      isOpsUserRef.current = false // Ensure ref is false
+      navigate('/login', { replace: true })
+    }
+  }, [isAuthenticated, user, navigate])
+  
+  // Early return if not OPS user (prevents polling and rendering)
+  // This must be AFTER all hooks and state declarations
+  if (!isOpsUser) {
+    isOpsUserRef.current = false // Ensure ref is false
+    return null
+  }
 
   // Debounced search
   const debouncedSearch = useRef(
     debounce(async (term) => {
-      setPage(1)
-      await loadConversations(1, term, true)
+      // Only search if user is OPS
+      if (isOpsUserRef.current) {
+        setPage(1)
+        await loadConversations(1, term, true)
+      }
     }, 500)
   ).current
 
   // Debounced typing indicator
   const debouncedTyping = useRef(
     debounce(async (conversationId, isTyping) => {
-      if (conversationId) {
-        try {
-          await api.post(`/ops/conversations/${conversationId}/typing`, { is_typing: isTyping })
-        } catch (error) {
-          // Silent fail for typing indicator
-        }
+      // Guard: Don't make API calls if user is not OPS
+      if (!isOpsUserRef.current || !conversationId) {
+        return
+      }
+      
+      try {
+        await api.post(`/ops/conversations/${conversationId}/typing`, { is_typing: isTyping })
+      } catch (error) {
+        // Silent fail for typing indicator
       }
     }, TYPING_DEBOUNCE_MS)
   ).current
 
   useEffect(() => {
+    // Guard: Don't do anything if user is not OPS
+    if (!isOpsUserRef.current) {
+      return
+    }
+    
+    // Only search if user is OPS
     if (searchTerm !== undefined) {
       debouncedSearch(searchTerm)
     }
-  }, [searchTerm, debouncedSearch])
+  }, [searchTerm, debouncedSearch, isOpsUserRef.current])
 
   useEffect(() => {
+    // Guard: Don't do anything if user is not OPS
+    if (!isOpsUserRef.current) {
+      return
+    }
+    
+    // Only load conversations if user is OPS
     loadConversations(page, searchTerm, false)
-  }, [page])
+  }, [page]) // Removed ref from deps - it's checked inside
 
-  // Poll conversations periodically
+  // Poll conversations periodically - only when page is visible and user is OPS
   useEffect(() => {
-    const interval = setInterval(() => {
-      loadConversations(page, searchTerm, true)
-    }, POLL_INTERVAL_MS)
-    return () => clearInterval(interval)
-  }, [page, searchTerm])
+    // Guard: Don't start polling if user is not OPS
+    if (!isOpsUserRef.current) {
+      return
+    }
+    
+    let interval = null
+    
+    const startPolling = () => {
+      // Double check before starting each poll
+      if (document.visibilityState === 'visible' && isOpsUserRef.current) {
+        interval = setInterval(() => {
+          // Check ref before each poll request (avoids stale closure)
+          if (isOpsUserRef.current && document.visibilityState === 'visible') {
+            loadConversations(page, searchTerm, true)
+          } else {
+            // Stop polling if user is no longer OPS or page is hidden
+            if (interval) {
+              clearInterval(interval)
+              interval = null
+            }
+          }
+        }, POLL_INTERVAL_MS)
+      }
+    }
+    
+    const stopPolling = () => {
+      if (interval) {
+        clearInterval(interval)
+        interval = null
+      }
+    }
+    
+    // Handle visibility change
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isOpsUserRef.current) {
+        stopPolling() // Stop existing before starting new
+        startPolling()
+      } else {
+        stopPolling()
+      }
+    }
+    
+    // Start polling if visible and logged in as OPS
+    startPolling()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    return () => {
+      stopPolling()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [page, searchTerm, isOpsUser]) // Include isOpsUser to re-run when auth changes
 
-  // Handle selected conversation
+  // Handle selected conversation - only poll when page is visible and user is OPS
   useEffect(() => {
+    // Guard: Don't start polling if user is not OPS
+    if (!isOpsUserRef.current) {
+      return
+    }
+    
+    let interval = null
+    
     if (selectedConversation) {
       loadMessages(selectedConversation.conversation_id, false)
       markAsRead(selectedConversation.conversation_id)
       
-      // Poll for new messages
-      const interval = setInterval(() => {
-        loadMessages(selectedConversation.conversation_id, true)
-      }, MESSAGE_POLL_INTERVAL_MS)
-      return () => clearInterval(interval)
+      const startMessagePolling = () => {
+        if (document.visibilityState === 'visible' && isOpsUserRef.current) {
+          interval = setInterval(() => {
+            // Check ref before each poll request (avoids stale closure)
+            if (isOpsUserRef.current && document.visibilityState === 'visible' && selectedConversation) {
+              loadMessages(selectedConversation.conversation_id, true)
+            } else {
+              // Stop polling if user is no longer OPS or page is hidden
+              if (interval) {
+                clearInterval(interval)
+                interval = null
+              }
+            }
+          }, MESSAGE_POLL_INTERVAL_MS)
+        }
+      }
+      
+      const stopMessagePolling = () => {
+        if (interval) {
+          clearInterval(interval)
+          interval = null
+        }
+      }
+      
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible' && isOpsUserRef.current) {
+          stopMessagePolling() // Stop existing before starting new
+          startMessagePolling()
+        } else {
+          stopMessagePolling()
+        }
+      }
+      
+      startMessagePolling()
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+      
+      return () => {
+        stopMessagePolling()
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
     }
-  }, [selectedConversation])
+  }, [selectedConversation, isOpsUser]) // Include isOpsUser to re-run when auth changes
 
   // Check scroll position
   useEffect(() => {
@@ -120,6 +248,11 @@ export default function OpsDashboard() {
   }, [messages])
 
   const loadConversations = async (pageNum = 1, search = '', silent = false) => {
+    // Guard: Don't make API calls if user is not OPS
+    if (!isOpsUserRef.current) {
+      return
+    }
+    
     if (!silent) setLoading(true)
     try {
       const response = await api.get('/ops/conversations', {
@@ -147,6 +280,11 @@ export default function OpsDashboard() {
   }
 
   const loadMessages = async (conversationId, silent = false) => {
+    // Guard: Don't make API calls if user is not OPS
+    if (!isOpsUserRef.current) {
+      return
+    }
+    
     if (!silent) setLoading(true)
     try {
       const response = await api.get(`/ops/conversations/${conversationId}/messages`, {
@@ -197,6 +335,11 @@ export default function OpsDashboard() {
   }
 
   const markAsRead = async (conversationId) => {
+    // Guard: Don't make API calls if user is not OPS
+    if (!isOpsUserRef.current) {
+      return
+    }
+    
     try {
       await api.post(`/ops/conversations/${conversationId}/mark-read`)
       // Update local state
@@ -320,9 +463,19 @@ export default function OpsDashboard() {
   }
 
   const handleLogout = () => {
+    // Stop all polling before logout
+    // The useEffect cleanup will handle intervals, but we ensure it's immediate
     logout()
     navigate('/')
   }
+  
+  // Cleanup on unmount (when component unmounts, e.g., on logout)
+  useEffect(() => {
+    return () => {
+      // Cleanup function - all intervals will be cleared by their respective useEffect cleanup
+      // This is just a safety net
+    }
+  }, [])
 
   const formatPhone = (phone) => {
     return phone?.replace('whatsapp:', '') || ''
@@ -381,6 +534,11 @@ export default function OpsDashboard() {
 
   // Typing indicator
   useEffect(() => {
+    // Guard: Don't send typing indicator if user is not OPS
+    if (!isOpsUserRef.current) {
+      return
+    }
+    
     if (messageText && selectedConversation) {
       debouncedTyping(selectedConversation.conversation_id, true)
     } else if (selectedConversation) {
