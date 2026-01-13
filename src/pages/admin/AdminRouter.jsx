@@ -19,6 +19,8 @@ import AdminOpsUsersPage from './AdminOpsUsersPage'
 import AdminSettingsPage from './AdminSettingsPage'
 import AdminAutomationPage from './AdminAutomationPage'
 import AdminDocumentImportPage from './AdminDocumentImportPage'
+import AdminCSCAExamsPage from './AdminCSCAExamsPage'
+import AdminCSCAPrepCoursesPage from './AdminCSCAPrepCoursesPage'
 
 const routeTitles = {
   '/admin': 'Dashboard',
@@ -39,6 +41,8 @@ const routeTitles = {
   '/admin/settings': 'Settings',
   '/admin/automation': 'Automation',
   '/admin/document-import': 'Document Import',
+  '/admin/csca-exams': 'CSCA Exams',
+  '/admin/csca-prep-courses': 'CSCA Prep Courses',
 }
 
 export default function AdminRouter() {
@@ -66,6 +70,8 @@ export default function AdminRouter() {
         <Route path="settings" element={<AdminSettingsPage />} />
         <Route path="automation" element={<AdminAutomationPage />} />
         <Route path="document-import" element={<AdminDocumentImportPage />} />
+        <Route path="csca-exams" element={<AdminCSCAExamsPage />} />
+        <Route path="csca-prep-courses" element={<AdminCSCAPrepCoursesPage />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>
     </AdminLayout>

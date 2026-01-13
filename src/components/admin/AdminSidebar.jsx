@@ -15,7 +15,9 @@ import {
   Bot,
   LogOut,
   Loader2,
-  Home
+  Home,
+  BookOpen,
+  ClipboardList
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
@@ -32,6 +34,8 @@ export default function AdminSidebar({ sidebarOpen, setSidebarOpen }) {
     { path: '/', label: 'Home', icon: Home },
     { path: '/admin', label: 'Overview', icon: BarChart3 },
     { path: '/admin/leads', label: 'Leads', icon: Users },
+    { path: '/admin/csca-exams', label: 'CSCA Exams', icon: BookOpen },
+    { path: '/admin/csca-prep-courses', label: 'CSCA Prep Courses', icon: ClipboardList },
     { path: '/admin/complaints', label: 'Complaints', icon: MessageSquare },
     { path: '/admin/chat', label: 'Chat', icon: MessageCircle },
     { path: '/admin/users', label: 'Users', icon: Users },
