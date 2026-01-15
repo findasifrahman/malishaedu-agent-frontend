@@ -191,7 +191,7 @@ export default function OpsDashboard() {
           interval = setInterval(() => {
             // Check ref before each poll request (avoids stale closure)
             if (isOpsUserRef.current && document.visibilityState === 'visible' && selectedConversation) {
-              loadMessages(selectedConversation.conversation_id, false)
+              loadMessages(selectedConversation.conversation_id, true)
             } else {
               // Stop polling if user is no longer OPS or page is hidden
               if (interval) {
@@ -314,6 +314,14 @@ export default function OpsDashboard() {
       setLoading(true)
       setMessagePage(1) // Reset to page 1 for new conversation
       setMessages([]) // Clear messages for new conversation
+      
+      // Fallback timeout to ensure loading is never stuck
+      const loadingTimeout = setTimeout(() => {
+        setLoading(false)
+      }, 5000) // Clear loading after 5 seconds max
+      
+      // Store timeout ID to clear it later
+      window.loadingTimeout = loadingTimeout
     }
     
     try {
@@ -388,16 +396,23 @@ export default function OpsDashboard() {
       
     } catch (error) {
       console.error('Error loading messages:', error)
+      // Always clear loading state on error
       if (loadMore) {
         setLoadingMore(false)
       } else if (!silent) {
         setLoading(false)
       }
     } finally {
+      // Always clear loading state
       if (loadMore) {
         setLoadingMore(false)
       } else if (!silent) {
         setLoading(false)
+        // Clear the fallback timeout if it exists
+        if (window.loadingTimeout) {
+          clearTimeout(window.loadingTimeout)
+          window.loadingTimeout = null
+        }
       }
     }
   }
