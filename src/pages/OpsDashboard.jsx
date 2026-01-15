@@ -191,7 +191,7 @@ export default function OpsDashboard() {
           interval = setInterval(() => {
             // Check ref before each poll request (avoids stale closure)
             if (isOpsUserRef.current && document.visibilityState === 'visible' && selectedConversation) {
-              loadMessages(selectedConversation.conversation_id, true)
+              loadMessages(selectedConversation.conversation_id, false)
             } else {
               // Stop polling if user is no longer OPS or page is hidden
               if (interval) {
