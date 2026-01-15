@@ -53,6 +53,7 @@ export default function OpsDashboard() {
   
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
+  const messagePollingIntervalRef = useRef(null) // Track polling interval
   const typingTimeoutRef = useRef(null)
   const longPressTimerRef = useRef(null)
   const scrollPositionRef = useRef(0)
@@ -110,8 +111,8 @@ export default function OpsDashboard() {
       return
     }
     
-    // Only search if user is OPS
-    if (searchTerm !== undefined) {
+    // Only search if user is OPS and there's actual search term
+    if (searchTerm && searchTerm.trim() !== '') {
       debouncedSearch(searchTerm)
     }
   }, [searchTerm, debouncedSearch, isOpsUserRef.current])
@@ -171,7 +172,7 @@ export default function OpsDashboard() {
       stopPolling()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [page, searchTerm]) // Remove isOpsUser to prevent infinite re-renders
+  }, [page, searchTerm, isOpsUserRef.current]) // Only re-run when page, search, or OPS status changes
 
   // Handle selected conversation - only poll when page is visible and user is OPS
   useEffect(() => {
@@ -188,15 +189,20 @@ export default function OpsDashboard() {
       
       const startMessagePolling = () => {
         if (document.visibilityState === 'visible' && isOpsUserRef.current) {
-          interval = setInterval(() => {
+          // Clear existing interval before starting new one
+          if (messagePollingIntervalRef.current) {
+            clearInterval(messagePollingIntervalRef.current)
+          }
+          
+          messagePollingIntervalRef.current = setInterval(() => {
             // Check ref before each poll request (avoids stale closure)
             if (isOpsUserRef.current && document.visibilityState === 'visible' && selectedConversation) {
               loadMessages(selectedConversation.conversation_id, true)
             } else {
               // Stop polling if user is no longer OPS or page is hidden
-              if (interval) {
-                clearInterval(interval)
-                interval = null
+              if (messagePollingIntervalRef.current) {
+                clearInterval(messagePollingIntervalRef.current)
+                messagePollingIntervalRef.current = null
               }
             }
           }, MESSAGE_POLL_INTERVAL_MS)
@@ -204,9 +210,9 @@ export default function OpsDashboard() {
       }
       
       const stopMessagePolling = () => {
-        if (interval) {
-          clearInterval(interval)
-          interval = null
+        if (messagePollingIntervalRef.current) {
+          clearInterval(messagePollingIntervalRef.current)
+          messagePollingIntervalRef.current = null
         }
       }
       
@@ -329,12 +335,13 @@ export default function OpsDashboard() {
         params: { page: messagePage, limit: 30 }
       })
       
-      // Debug: Log the response structure
+      // Debug: Log response structure
       console.log('Messages API Response:', response)
       
       // Handle the correct API response structure
       // API returns response.data as array directly, not wrapped in object
       const newMessages = Array.isArray(response.data) ? response.data : []
+      console.log('New messages:', newMessages.length)
       const currentPage = 1 // Default since API doesn't provide pagination
       const totalPages = 1 // Default since API doesn't provide pagination
       const totalCount = newMessages.length
@@ -344,11 +351,22 @@ export default function OpsDashboard() {
         setMessages(prev => [...prev, ...newMessages])
         setHasMore(currentPage < totalPages)
         setTotalMessages(totalCount)
-      } else {
-        // Set messages for initial load
+      } else if (!silent) {
+        // Set messages for initial load only (not for silent polling)
+        console.log('Setting initial messages:', newMessages.length)
         setMessages(newMessages)
         setHasMore(currentPage < totalPages)
         setTotalMessages(totalCount)
+      } else {
+        // Silent polling - don't update messages state, just update metadata
+        console.log('Silent polling - preserving existing messages')
+        // Only update hasMore and totalMessages if needed
+        if (currentPage < totalPages !== hasMore) {
+          setHasMore(currentPage < totalPages)
+        }
+        if (totalCount !== totalMessages) {
+          setTotalMessages(totalCount)
+        }
       }
       
       // Update last seen message timestamp
@@ -357,8 +375,8 @@ export default function OpsDashboard() {
         setLastSeenMessageAt(new Date(latest.created_at))
       }
       
-      // Check for new inbound messages (only on initial load)
-      if (!loadMore && lastSeenMessageAt && newMessages.length > 0) {
+      // Check for new inbound messages (only on initial load, not silent polling)
+      if (!loadMore && !silent && lastSeenMessageAt && newMessages.length > 0) {
         const latestInbound = newMessages
           .filter(m => m.direction === 'in')
           .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
@@ -420,6 +438,13 @@ export default function OpsDashboard() {
   const markAsRead = async (conversationId) => {
     // Guard: Don't make API calls if user is not OPS
     if (!isOpsUserRef.current) {
+      return
+    }
+    
+    // Guard: Don't mark as read if already marked (prevents duplicate calls)
+    const conv = conversations.find(c => c.conversation_id === conversationId)
+    if (conv && conv.unread_count === 0) {
+      console.log('Conversation already marked as read, skipping')
       return
     }
     
@@ -567,8 +592,11 @@ export default function OpsDashboard() {
   // Cleanup on unmount (when component unmounts, e.g., on logout)
   useEffect(() => {
     return () => {
-      // Cleanup function - all intervals will be cleared by their respective useEffect cleanup
-      // This is just a safety net
+      // Cleanup function - clear message polling interval
+      if (messagePollingIntervalRef.current) {
+        clearInterval(messagePollingIntervalRef.current)
+        messagePollingIntervalRef.current = null
+      }
     }
   }, [])
 
@@ -634,9 +662,11 @@ export default function OpsDashboard() {
       return
     }
     
-    if (messageText && selectedConversation) {
+    // Only send typing indicator if there's actual text changes (not just empty state)
+    if (messageText.trim() && selectedConversation) {
       debouncedTyping(selectedConversation.conversation_id, true)
-    } else if (selectedConversation) {
+    } else if (!messageText.trim() && selectedConversation) {
+      // Only send "not typing" if we were previously typing
       debouncedTyping(selectedConversation.conversation_id, false)
     }
   }, [messageText, selectedConversation])
@@ -810,36 +840,38 @@ export default function OpsDashboard() {
                   <div className="text-center text-gray-500">No messages yet</div>
                 ) : (
                   messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex ${
-                        msg.direction === 'out' ? 'justify-end' : 'justify-start'
-                      }`}
-                    >
-                      <div
-                        className={`max-w-[80%] lg:max-w-[60%] rounded-lg px-4 py-2 ${
-                          msg.direction === 'out'
-                            ? msg.sender_type === 'ops'
-                              ? 'bg-green-600 text-white'
-                              : 'bg-blue-500 text-white'
-                            : 'bg-gray-100 text-gray-900 border border-gray-200'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          {msg.sender_type === 'ai' && <Bot className="w-4 h-4 text-blue-500" />}
-                          {msg.sender_type === 'ops' && <Shield className="w-4 h-4 text-green-600" />}
-                          {msg.sender_type === 'user' && <User className="w-4 h-4 text-gray-600" />}
-                          <span className="text-xs opacity-75">
-                            {msg.sender_type === 'ops' ? 'Ops' : msg.sender_type === 'ai' ? 'AI' : 'User'}
-                          </span>
+                      <React.Fragment key={msg.id}>
+                        <div
+                          className={`flex ${
+                            msg.direction === 'out' ? 'justify-end' : 'justify-start'
+                          }`}
+                        >
+                          <div
+                            className={`max-w-[80%] lg:max-w-[60%] rounded-lg px-4 py-2 ${
+                              msg.direction === 'out'
+                                ? msg.sender_type === 'ops'
+                                  ? 'bg-green-600 text-white'
+                                  : 'bg-blue-500 text-white'
+                                : 'bg-gray-100 text-gray-900 border border-gray-200'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              {msg.sender_type === 'ai' && <Bot className="w-4 h-4 text-blue-500" />}
+                              {msg.sender_type === 'ops' && <Shield className="w-4 h-4 text-green-600" />}
+                              {msg.sender_type === 'user' && <User className="w-4 h-4 text-gray-600" />}
+                              <span className="text-xs opacity-70">
+                                {msg.sender_type === 'ops' ? 'Ops' : msg.sender_type === 'ai' ? 'AI' : 'User'}
+                              </span>
+                             
+                              <span className="text-xs opacity-50">
+                                {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                             <span className="whitespace-pre-wrap break-words">{msg.body}</span>
+                          </div>
                         </div>
-                        <p className="whitespace-pre-wrap break-words text-gray-800">{msg.body}</p>
-                        <span className="text-xs opacity-75 mt-1 block">
-                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                    </div>
-                  ))
+                      </React.Fragment>
+                    ))
                 )}
                 <div ref={messagesEndRef} />
               </div>
