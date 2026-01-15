@@ -47,11 +47,15 @@ export default function OpsDashboard() {
   const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, conversation: null })
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [lastSeenMessageAt, setLastSeenMessageAt] = useState(null)
+  const [messagePage, setMessagePage] = useState(1)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [totalMessages, setTotalMessages] = useState(0)
   
   const messagesEndRef = useRef(null)
   const messagesContainerRef = useRef(null)
   const typingTimeoutRef = useRef(null)
   const longPressTimerRef = useRef(null)
+  const scrollPositionRef = useRef(0)
   const isOpsUserRef = useRef(false) // Track if user is OPS to prevent stale closures
   
   // Check if user is OPS - update ref immediately
@@ -240,12 +244,38 @@ export default function OpsDashboard() {
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container
       const atBottom = scrollHeight - scrollTop - clientHeight < 50
+      const atTop = scrollTop < 100 // Near top of messages
       setIsAtBottom(atBottom)
+      
+      // Store scroll position for debugging
+      scrollPositionRef.current = scrollTop
+      
+      // Load more messages when scrolling to top
+      if (atTop && hasMore && !loadingMore && messages.length > 0) {
+        setMessagePage(prev => prev + 1)
+      }
+      
+      // Auto-scroll to bottom only if user is at bottom and new message arrives
+      if (atBottom && lastSeenMessageAt) {
+        const latestMessage = messages[messages.length - 1]
+        if (latestMessage && new Date(latestMessage.created_at) > lastSeenMessageAt) {
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+          }, 100)
+        }
+      }
     }
 
     container.addEventListener('scroll', handleScroll)
     return () => container.removeEventListener('scroll', handleScroll)
-  }, [messages])
+  }, [messages, lastSeenMessageAt])
+
+  // Load more messages when page changes
+  useEffect(() => {
+    if (selectedConversation && messagePage > 1 && hasMore && !loadingMore) {
+      loadMessages(selectedConversation.conversation_id, true, true)
+    }
+  }, [messagePage, selectedConversation, hasMore, loadingMore])
 
   const loadConversations = async (pageNum = 1, search = '', silent = false) => {
     // Guard: Don't make API calls if user is not OPS
@@ -279,21 +309,45 @@ export default function OpsDashboard() {
     }
   }
 
-  const loadMessages = async (conversationId, silent = false) => {
+  const loadMessages = async (conversationId, silent = false, loadMore = false) => {
     // Guard: Don't make API calls if user is not OPS
     if (!isOpsUserRef.current) {
       return
     }
     
-    if (!silent) setLoading(true)
+    if (loadMore) {
+      setLoadingMore(true)
+    } else if (!silent) {
+      setLoading(true)
+      setMessagePage(1) // Reset to page 1 for new conversation
+      setMessages([]) // Clear messages for new conversation
+    }
+    
     try {
       const response = await api.get(`/ops/conversations/${conversationId}/messages`, {
-        params: { limit: 50 }
+        params: { page: messagePage, limit: 30 }
       })
-      const newMessages = response.data || []
       
-      // Check for new inbound messages
-      if (silent && lastSeenMessageAt && newMessages.length > 0) {
+      // Fix: Handle the correct API response structure
+      const apiData = response.data
+      const newMessages = apiData.messages || apiData.data || []
+      const currentPage = apiData.current_page || apiData.page || 1
+      const totalPages = apiData.total_pages || 1
+      
+      if (loadMore) {
+        // Append messages for load more
+        setMessages(prev => [...prev, ...newMessages])
+        setHasMore(currentPage < totalPages)
+        setTotalMessages(response.data.total)
+      } else {
+        // Set messages for initial load
+        setMessages(newMessages)
+        setHasMore(currentPage < totalPages)
+        setTotalMessages(response.data.total)
+      }
+      
+      // Check for new inbound messages (only on initial load)
+      if (!loadMore && lastSeenMessageAt && newMessages.length > 0) {
         const latestInbound = newMessages
           .filter(m => m.direction === 'in')
           .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
@@ -313,24 +367,35 @@ export default function OpsDashboard() {
         }
       }
       
-      setMessages(newMessages)
-      
       // Update last seen message timestamp
       if (newMessages.length > 0) {
         const latest = newMessages[newMessages.length - 1]
         setLastSeenMessageAt(new Date(latest.created_at))
       }
       
-      // Scroll to bottom if at bottom or first load
-      if (isAtBottom || !silent) {
+      // Scroll to bottom only for new messages or when at bottom
+      if (!loadMore && (isAtBottom || !silent)) {
         setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: silent ? 'auto' : 'smooth' })
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        }, 100)
+      } else if (loadMore) {
+        // Don't auto-scroll when loading more messages
+        setTimeout(() => {
+          // Maintain current scroll position
+          const container = messagesContainerRef.current
+          if (container && scrollPositionRef.current !== null) {
+            container.scrollTop = scrollPositionRef.current + 100
+          }
         }, 100)
       }
     } catch (error) {
       console.error('Error loading messages:', error)
     } finally {
-      if (!silent) setLoading(false)
+      if (loadMore) {
+        setLoadingMore(false)
+      } else if (!silent) {
+        setLoading(false)
+      }
     }
   }
 
@@ -449,7 +514,19 @@ export default function OpsDashboard() {
     }
   }
 
-  const handleDelete = async (conversationId) => {
+  const handleDeleteMessage = async (messageId) => {
+    try {
+      await api.delete(`/ops/conversations/${selectedConversation.conversation_id}/messages/${messageId}`)
+      // Remove message from local state
+      setMessages(prev => prev.filter(msg => msg.id !== messageId))
+      setTotalMessages(prev => Math.max(0, prev - 1))
+    } catch (error) {
+      console.error('Error deleting message:', error)
+      alert('Failed to delete message')
+    }
+  }
+
+  const handleDeleteConversation = async (conversationId) => {
     try {
       await api.delete(`/ops/conversations/${conversationId}`)
       await loadConversations(page, searchTerm, true)
@@ -605,8 +682,8 @@ export default function OpsDashboard() {
               conversations.map((conv) => (
                 <div
                   key={conv.conversation_id}
-                  onContextMenu={(e) => handleContextMenu(e, conv)}
-                  onTouchStart={() => handleLongPress(conv)}
+                  onContextMenu={(e) => handleContextMenu(e, conv, null)}
+                  onTouchStart={() => handleLongPress(conv, null)}
                   onTouchEnd={cancelLongPress}
                   onTouchCancel={cancelLongPress}
                 >
@@ -727,18 +804,18 @@ export default function OpsDashboard() {
                             ? msg.sender_type === 'ops'
                               ? 'bg-green-600 text-white'
                               : 'bg-blue-500 text-white'
-                            : 'bg-white text-gray-900 border border-gray-200'
+                            : 'bg-gray-100 text-gray-900 border border-gray-200'
                         }`}
                       >
                         <div className="flex items-center gap-2 mb-1">
-                          {msg.sender_type === 'ai' && <Bot className="w-4 h-4" />}
-                          {msg.sender_type === 'ops' && <Shield className="w-4 h-4" />}
-                          {msg.sender_type === 'user' && <User className="w-4 h-4" />}
+                          {msg.sender_type === 'ai' && <Bot className="w-4 h-4 text-blue-500" />}
+                          {msg.sender_type === 'ops' && <Shield className="w-4 h-4 text-green-600" />}
+                          {msg.sender_type === 'user' && <User className="w-4 h-4 text-gray-600" />}
                           <span className="text-xs opacity-75">
                             {msg.sender_type === 'ops' ? 'Ops' : msg.sender_type === 'ai' ? 'AI' : 'User'}
                           </span>
                         </div>
-                        <p className="whitespace-pre-wrap break-words">{msg.body}</p>
+                        <p className="whitespace-pre-wrap break-words text-gray-800">{msg.body}</p>
                         <span className="text-xs opacity-75 mt-1 block">
                           {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
@@ -832,30 +909,29 @@ export default function OpsDashboard() {
         visible={confirmDialog.visible}
         title={
           confirmDialog.type === 'delete' ? 'Delete Conversation' :
+          confirmDialog.type === 'delete-message' ? 'Delete Message' :
           confirmDialog.type === 'block' ? 'Block User' :
           confirmDialog.type === 'unblock' ? 'Unblock User' : ''
         }
         message={
           confirmDialog.type === 'delete' ? 'Are you sure you want to delete this conversation? This action cannot be undone.' :
+          confirmDialog.type === 'delete-message' ? 'Are you sure you want to delete this message? This action cannot be undone.' :
           confirmDialog.type === 'block' ? 'Are you sure you want to block this user? AI will not reply to their messages (cost control).' :
           confirmDialog.type === 'unblock' ? 'Are you sure you want to unblock this user?' : ''
         }
-        confirmText={confirmDialog.type === 'delete' ? 'Delete' : confirmDialog.type === 'block' ? 'Block' : 'Unblock'}
-        showReasonInput={confirmDialog.type === 'block'}
-        reasonValue={confirmDialog.reason}
-        onReasonChange={(value) => setConfirmDialog(prev => ({ ...prev, reason: value }))}
         onConfirm={() => {
-          const { type, conversation, reason } = confirmDialog
-          if (type === 'delete') {
-            handleDelete(conversation.conversation_id)
-          } else if (type === 'block') {
-            handleBlock(conversation.conversation_id, reason)
-          } else if (type === 'unblock') {
-            handleUnblock(conversation.conversation_id)
+          if (confirmDialog.type === 'delete' && confirmDialog.conversation) {
+            handleDeleteConversation(confirmDialog.conversation.conversation_id)
+          } else if (confirmDialog.type === 'delete-message' && confirmDialog.message) {
+            handleDeleteMessage(confirmDialog.message.id)
+          } else if (confirmDialog.type === 'block' && confirmDialog.conversation) {
+            handleBlock(confirmDialog.conversation.conversation_id, confirmDialog.reason)
+          } else if (confirmDialog.type === 'unblock' && confirmDialog.conversation) {
+            handleUnblock(confirmDialog.conversation.conversation_id)
           }
-          setConfirmDialog({ visible: false, type: null, conversation: null, reason: '' })
+          setConfirmDialog({ visible: false, type: null, conversation: null, reason: '', message: null })
         }}
-        onCancel={() => setConfirmDialog({ visible: false, type: null, conversation: null, reason: '' })}
+        onCancel={() => setConfirmDialog({ visible: false, type: null, conversation: null, reason: '', message: null })}
       />
 
       {/* Context Menu */}
