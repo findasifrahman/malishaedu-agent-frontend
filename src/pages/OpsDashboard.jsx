@@ -8,8 +8,8 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import ContextMenu from '../components/ContextMenu'
 
 // Constants
-const POLL_INTERVAL_MS = 6000 // Poll conversations every 6 seconds
-const MESSAGE_POLL_INTERVAL_MS = 3000 // Poll messages every 3 seconds
+const POLL_INTERVAL_MS = 60000*2 // Poll conversations every 6 seconds
+const MESSAGE_POLL_INTERVAL_MS = 120000 // Poll messages every 2 minutes (120 seconds)
 const TYPING_DEBOUNCE_MS = 800
 
 // Simple debounce function
@@ -328,22 +328,32 @@ export default function OpsDashboard() {
         params: { page: messagePage, limit: 30 }
       })
       
-      // Fix: Handle the correct API response structure
+      // Debug: Log the response structure
+      console.log('Messages API Response:', response)
+      
+      // Handle the correct API response structure
       const apiData = response.data
-      const newMessages = apiData.messages || apiData.data || []
+      const newMessages = apiData.messages || apiData.data || apiData.items || []
       const currentPage = apiData.current_page || apiData.page || 1
-      const totalPages = apiData.total_pages || 1
+      const totalPages = apiData.total_pages || apiData.total_pages || 1
+      const totalCount = apiData.total || apiData.total_count || 0
       
       if (loadMore) {
         // Append messages for load more
         setMessages(prev => [...prev, ...newMessages])
         setHasMore(currentPage < totalPages)
-        setTotalMessages(response.data.total)
+        setTotalMessages(totalCount)
       } else {
         // Set messages for initial load
         setMessages(newMessages)
         setHasMore(currentPage < totalPages)
-        setTotalMessages(response.data.total)
+        setTotalMessages(totalCount)
+      }
+      
+      // Update last seen message timestamp
+      if (newMessages.length > 0) {
+        const latest = newMessages[newMessages.length - 1]
+        setLastSeenMessageAt(new Date(latest.created_at))
       }
       
       // Check for new inbound messages (only on initial load)
@@ -367,12 +377,6 @@ export default function OpsDashboard() {
         }
       }
       
-      // Update last seen message timestamp
-      if (newMessages.length > 0) {
-        const latest = newMessages[newMessages.length - 1]
-        setLastSeenMessageAt(new Date(latest.created_at))
-      }
-      
       // Scroll to bottom only for new messages or when at bottom
       if (!loadMore && (isAtBottom || !silent)) {
         setTimeout(() => {
@@ -388,8 +392,14 @@ export default function OpsDashboard() {
           }
         }, 100)
       }
+      
     } catch (error) {
       console.error('Error loading messages:', error)
+      if (loadMore) {
+        setLoadingMore(false)
+      } else if (!silent) {
+        setLoading(false)
+      }
     } finally {
       if (loadMore) {
         setLoadingMore(false)
@@ -398,12 +408,6 @@ export default function OpsDashboard() {
       }
     }
   }
-
-  const markAsRead = async (conversationId) => {
-    // Guard: Don't make API calls if user is not OPS
-    if (!isOpsUserRef.current) {
-      return
-    }
     
     try {
       await api.post(`/ops/conversations/${conversationId}/mark-read`)
@@ -420,7 +424,7 @@ export default function OpsDashboard() {
       console.error('Error marking as read:', error)
     }
   }
-
+    
   const handleTakeover = async () => {
     if (!selectedConversation) return
     try {
@@ -958,4 +962,4 @@ export default function OpsDashboard() {
       />
     </div>
   )
-}
+
