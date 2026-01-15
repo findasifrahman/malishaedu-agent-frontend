@@ -8,7 +8,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import ContextMenu from '../components/ContextMenu'
 
 // Constants
-const POLL_INTERVAL_MS = 60000*2 // Poll conversations every 6 seconds
+const POLL_INTERVAL_MS = 120000 // Poll conversations every 2 minutes (120 seconds)
 const MESSAGE_POLL_INTERVAL_MS = 120000 // Poll messages every 2 minutes (120 seconds)
 const TYPING_DEBOUNCE_MS = 800
 
@@ -116,16 +116,6 @@ export default function OpsDashboard() {
     }
   }, [searchTerm, debouncedSearch, isOpsUserRef.current])
 
-  useEffect(() => {
-    // Guard: Don't do anything if user is not OPS
-    if (!isOpsUserRef.current) {
-      return
-    }
-    
-    // Only load conversations if user is OPS
-    loadConversations(page, searchTerm, false)
-  }, [page]) // Removed ref from deps - it's checked inside
-
   // Poll conversations periodically - only when page is visible and user is OPS
   useEffect(() => {
     // Guard: Don't start polling if user is not OPS
@@ -138,6 +128,9 @@ export default function OpsDashboard() {
     const startPolling = () => {
       // Double check before starting each poll
       if (document.visibilityState === 'visible' && isOpsUserRef.current) {
+        // Load immediately when polling starts
+        loadConversations(page, searchTerm, false)
+        
         interval = setInterval(() => {
           // Check ref before each poll request (avoids stale closure)
           if (isOpsUserRef.current && document.visibilityState === 'visible') {
@@ -178,7 +171,7 @@ export default function OpsDashboard() {
       stopPolling()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [page, searchTerm, isOpsUser]) // Include isOpsUser to re-run when auth changes
+  }, [page, searchTerm]) // Remove isOpsUser to prevent infinite re-renders
 
   // Handle selected conversation - only poll when page is visible and user is OPS
   useEffect(() => {
@@ -234,7 +227,7 @@ export default function OpsDashboard() {
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [selectedConversation, isOpsUser]) // Include isOpsUser to re-run when auth changes
+  }, [selectedConversation]) // Remove isOpsUser to prevent infinite re-renders
 
   // Check scroll position
   useEffect(() => {
@@ -332,11 +325,11 @@ export default function OpsDashboard() {
       console.log('Messages API Response:', response)
       
       // Handle the correct API response structure
-      const apiData = response.data
-      const newMessages = apiData.messages || apiData.data || apiData.items || []
-      const currentPage = apiData.current_page || apiData.page || 1
-      const totalPages = apiData.total_pages || apiData.total_pages || 1
-      const totalCount = apiData.total || apiData.total_count || 0
+      // API returns response.data as array directly, not wrapped in object
+      const newMessages = Array.isArray(response.data) ? response.data : []
+      const currentPage = 1 // Default since API doesn't provide pagination
+      const totalPages = 1 // Default since API doesn't provide pagination
+      const totalCount = newMessages.length
       
       if (loadMore) {
         // Append messages for load more
@@ -408,6 +401,12 @@ export default function OpsDashboard() {
       }
     }
   }
+  
+  const markAsRead = async (conversationId) => {
+    // Guard: Don't make API calls if user is not OPS
+    if (!isOpsUserRef.current) {
+      return
+    }
     
     try {
       await api.post(`/ops/conversations/${conversationId}/mark-read`)
@@ -962,4 +961,5 @@ export default function OpsDashboard() {
       />
     </div>
   )
+}
 
