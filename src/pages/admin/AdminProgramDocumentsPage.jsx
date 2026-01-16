@@ -82,9 +82,9 @@ export default function AdminProgramDocumentsPage() {
               className="w-full border border-gray-300 rounded-lg px-3 py-2"
             >
               <option value="">All Majors</option>
-              {majors.map(major => (
+              {Array.isArray(majors) ? majors.map(major => (
                 <option key={major.id} value={major.id}>{major.name}</option>
-              ))}
+              )) : []}
             </select>
           </div>
           <div>

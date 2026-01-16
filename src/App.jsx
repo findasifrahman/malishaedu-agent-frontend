@@ -79,7 +79,7 @@ function OpsRoute({ children }) {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <Router>
+      <Router future={{ v7_relativeSplatPath: true }}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route

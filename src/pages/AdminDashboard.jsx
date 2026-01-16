@@ -1779,8 +1779,14 @@ export default function AdminDashboard() {
       const pollInterval = setInterval(async () => {
         pollCount++
         try {
-          const statusResponse = await api.get(`/admin/document-import/extract-data-status/${jobId}`)
-          const job = statusResponse.data
+          // Poll both data extraction and SQL generation status
+          const [extractResponse, sqlResponse] = await Promise.all([
+            api.get(`/admin/document-import/extract-data-status/${jobId}`),
+            api.get(`/admin/document-import/generate-sql-status/${jobId}`)
+          ])
+          
+          const extractJob = extractResponse.data
+          const sqlJob = sqlResponse.data
           
           console.log(`📊 [${pollCount}] Job status: ${job.status}, progress: ${job.progress}`)
           setExtractionProgress(job.progress || 'Processing...')
@@ -1791,12 +1797,9 @@ export default function AdminDashboard() {
             setExtractionProgress('')
             
             if (!job.result) {
-              throw new Error('Job completed but no result returned')
-            }
-            
-            const extracted = job.result.extracted_data
-            if (!extracted) {
-              throw new Error('No extracted data in result')
+              console.error('No job result found')
+              alert('Data extraction completed but no result available')
+              return
             }
             
             console.log('✅ Data extracted successfully:', {
@@ -1813,6 +1816,22 @@ export default function AdminDashboard() {
               alert(`Data extraction completed with warnings:\n${extracted.errors.join('\n')}\n\nPlease review the extracted data before ingesting.`)
             } else {
               alert('Data extracted successfully! Please review and click "Ingest Data" to commit to database.')
+            }
+          }
+          
+          // Handle SQL generation completion
+          if (sqlJob && sqlJob.status === 'completed') {
+            console.log('✅ SQL generation completed:', {
+              sql_length: sqlJob.result?.sql?.length || 0
+            })
+            
+            if (sqlJob.result && sqlJob.result.sql) {
+              setGeneratedSQL(sqlJob.result.sql)
+              setManualSQL(sqlJob.result.sql)  // Also populate manual SQL field
+              alert('SQL generated successfully! You can review and execute the SQL.')
+            } else {
+              console.error('SQL generation completed but no SQL found')
+              alert('SQL generation completed but no SQL available')
             }
           } else if (job.status === 'failed') {
             clearInterval(pollInterval)

@@ -20,7 +20,7 @@ export default function AdminDocumentImportPage() {
       const formData = new FormData()
       formData.append('file', documentImportFile)
 
-      const response = await api.post('/admin/document-import/extract', formData, {
+      const response = await api.post('/admin/document-import/extract-data-start', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (progressEvent) => {
           const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
